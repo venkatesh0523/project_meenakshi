@@ -12,6 +12,15 @@ cleanup() {
 
 trap cleanup EXIT
 
+if command -v docker >/dev/null 2>&1; then
+  COMPOSE_CMD=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+  COMPOSE_CMD=(docker-compose)
+else
+  echo "Docker is not installed on the server or not available in PATH." >&2
+  exit 127
+fi
+
 mkdir -p "$APP_DIR"
 
 if [ -n "$SOURCE_DIR" ]; then
@@ -29,4 +38,4 @@ cp -a "$TMP_DIR"/. "$APP_DIR"/
 
 cd "$APP_DIR"
 
-docker compose up -d --build
+"${COMPOSE_CMD[@]}" up -d --build
