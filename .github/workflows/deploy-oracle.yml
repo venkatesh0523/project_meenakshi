@@ -26,13 +26,15 @@ jobs:
 
       - name: Package application
         run: |
+          ARCHIVE_PATH="/tmp/project_meenakshi.tar.gz"
+          rm -f "$ARCHIVE_PATH"
           tar \
             --exclude=.git \
             --exclude=.github \
             --exclude=node_modules \
             --exclude=.next \
-            --exclude=project_meenakshi.tar.gz \
-            -czf project_meenakshi.tar.gz .
+            -czf "$ARCHIVE_PATH" .
+          mv "$ARCHIVE_PATH" project_meenakshi.tar.gz
 
       - name: Copy package to Oracle VM
         uses: appleboy/scp-action@v0.1.7
