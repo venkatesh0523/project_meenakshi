@@ -20,7 +20,6 @@ This project includes a GitHub Actions workflow that can deploy to your Oracle C
 Required GitHub repository secrets:
 
 - `OCI_SSH_KEY`: private key contents from your `.key` file
-- `OCI_APP_DIR`: optional deploy folder on the VM, default is `/home/ubuntu/project_meenakshi`
 
 Deployment flow:
 
