@@ -100,6 +100,10 @@ a {
   align-items: stretch;
 }
 
+.authStageSolo {
+  grid-template-columns: minmax(0, 560px);
+}
+
 .authCard {
   padding: 34px;
   border-radius: 28px;
@@ -136,21 +140,6 @@ a {
   max-width: 38ch;
   color: var(--muted);
   line-height: 1.6;
-}
-
-.authSideNote {
-  padding: 28px 24px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(31, 42, 31, 0.08);
-  display: grid;
-  align-content: center;
-  gap: 12px;
-}
-
-.authLinkButton {
-  text-decoration: none;
-  text-align: center;
 }
 
 .authFooterLink {

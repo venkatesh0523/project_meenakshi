@@ -280,15 +280,13 @@ export default async function HomePage({ searchParams }) {
   return (
     <main className="page">
       <div className="shell cloudShell">
-        <section className="panel hero">
-          <p className="eyebrow">Meenakshi Cloud</p>
-          <h1>{user ? "Your device command center is live." : "A sharper login experience for your device cloud."}</h1>
-          <p>
-            {user
-              ? "Manage devices, MQTT credentials, and command history from one place."
-              : "Sign in from the center of the page, or create a new account with email OTP verification in a cleaner flow."}
-          </p>
-        </section>
+        {user ? (
+          <section className="panel hero">
+            <p className="eyebrow">Meenakshi Cloud</p>
+            <h1>Your device command center is live.</h1>
+            <p>Manage devices, MQTT credentials, and command history from one place.</p>
+          </section>
+        ) : null}
 
         <section className="panel stack">
           {authMessage ? <p className="banner bannerSuccess">{authMessage}</p> : null}
@@ -296,7 +294,7 @@ export default async function HomePage({ searchParams }) {
 
           {!user ? (
             <div className="authCenter">
-              <div className="authStage">
+              <div className="authStage authStageSolo">
                 <div className="authCard authCardFeatured">
                   {authView === "register" ? (
                     <>
@@ -336,16 +334,6 @@ export default async function HomePage({ searchParams }) {
                       </p>
                     </>
                   )}
-                </div>
-
-                <div className="authSideNote">
-                  <strong>New here?</strong>
-                  <p className="empty">
-                    Use the small register link if you do not have an account yet.
-                  </p>
-                  <a className="button buttonGhost authLinkButton" href="/?authView=register">
-                    Go To Register
-                  </a>
                 </div>
               </div>
             </div>
