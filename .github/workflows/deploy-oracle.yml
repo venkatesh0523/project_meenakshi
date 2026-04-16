@@ -40,7 +40,10 @@ jobs:
           key: ${{ secrets.OCI_SSH_KEY }}
           script_stop: true
           script: |
-            export OCI_APP_DIR="${{ secrets.OCI_APP_DIR || '/home/ubuntu/project_meenakshi' }}"
+            export OCI_APP_DIR="${{ secrets.OCI_APP_DIR }}"
+            if [ -z "$OCI_APP_DIR" ]; then
+              export OCI_APP_DIR="/home/ubuntu/project_meenakshi"
+            fi
             export DEPLOY_ARCHIVE="/tmp/project_meenakshi-deploy/project_meenakshi.tar.gz"
             export DEPLOY_WORKDIR="/tmp/project_meenakshi-workdir"
             rm -rf "$DEPLOY_WORKDIR"
