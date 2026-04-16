@@ -31,6 +31,7 @@ jobs:
             --exclude=.github \
             --exclude=node_modules \
             --exclude=.next \
+            --exclude=project_meenakshi.tar.gz \
             -czf project_meenakshi.tar.gz .
 
       - name: Copy package to Oracle VM
