@@ -14,6 +14,17 @@ CREATE TABLE IF NOT EXISTS user_sessions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS pending_user_registrations (
+  id SERIAL PRIMARY KEY,
+  full_name VARCHAR(150) NOT NULL,
+  email VARCHAR(200) NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  otp_code VARCHAR(6) NOT NULL,
+  otp_expires_at TIMESTAMPTZ NOT NULL,
+  verified_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS devices (
   id SERIAL PRIMARY KEY,
   device_id VARCHAR(100) NOT NULL UNIQUE,
@@ -46,6 +57,9 @@ ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
 
 ALTER TABLE devices
 ADD COLUMN IF NOT EXISTS last_status VARCHAR(30);
+
+ALTER TABLE pending_user_registrations
+ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
 
 INSERT INTO devices (device_id, device_name, device_type, location)
 VALUES ('arduino-led-01', 'Starter LED Device', 'arduino', 'Workbench')

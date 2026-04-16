@@ -11,10 +11,12 @@ import {
 } from "../lib/devices";
 import {
   authenticateUser,
+  beginPendingUserRegistration,
   createSession,
-  createUser,
   deleteSession,
-  getUserBySessionToken
+  getUserBySessionToken,
+  OTP_TTL_MINUTES,
+  verifyPendingUserRegistration
 } from "../lib/auth";
 
 function normalizeField(value) {
@@ -49,7 +51,7 @@ async function requireUser() {
   return user;
 }
 
-async function registerUser(formData) {
+async function startRegistration(formData) {
   "use server";
 
   const fullName = normalizeField(formData.get("fullName"));
@@ -59,16 +61,61 @@ async function registerUser(formData) {
   if (!fullName || !email || password.length < 6) {
     redirect(
       buildRedirect("/", {
-        authError: "Enter your name, email, and a password with at least 6 characters."
+        authError: "Enter your name, email, and a password with at least 6 characters.",
+        authView: "register"
       })
     );
   }
 
   try {
-    const user = await createUser({
+    await beginPendingUserRegistration({
       fullName,
       email,
       password
+    });
+  } catch (error) {
+    const message =
+      error.message === "SMTP is not configured"
+        ? "Registration email is not configured yet. Add SMTP settings first."
+        : "Unable to register. That email may already be in use.";
+
+    redirect(
+      buildRedirect("/", {
+        authError: message,
+        authView: "register"
+      })
+    );
+  }
+
+  redirect(
+    buildRedirect("/", {
+      authMessage: `We sent a ${OTP_TTL_MINUTES}-minute verification code to ${email}.`,
+      authView: "verify",
+      signupEmail: email
+    })
+  );
+}
+
+async function verifyRegistration(formData) {
+  "use server";
+
+  const email = normalizeField(formData.get("email"));
+  const otpCode = normalizeField(formData.get("otpCode"));
+
+  if (!email || otpCode.length !== 6) {
+    redirect(
+      buildRedirect("/", {
+        authError: "Enter the email address and 6-digit OTP code.",
+        authView: "verify",
+        signupEmail: email
+      })
+    );
+  }
+
+  try {
+    const user = await verifyPendingUserRegistration({
+      email,
+      otpCode
     });
     const session = await createSession(user.id);
 
@@ -80,14 +127,23 @@ async function registerUser(formData) {
       path: "/"
     });
   } catch (error) {
+    const message =
+      error.message === "OTP_EXPIRED"
+        ? "That OTP has expired. Start registration again to receive a fresh code."
+        : error.message === "OTP_INVALID"
+          ? "That OTP is not valid."
+          : "We could not verify that code.";
+
     redirect(
       buildRedirect("/", {
-        authError: "Unable to register. That email may already be in use."
+        authError: message,
+        authView: "verify",
+        signupEmail: email
       })
     );
   }
 
-  redirect(buildRedirect("/", { authMessage: "Account created. You can connect your Arduino now." }));
+  redirect(buildRedirect("/", { authMessage: "Your account is verified and ready to use." }));
 }
 
 async function loginUser(formData) {
@@ -269,6 +325,8 @@ export default async function HomePage({ searchParams }) {
   const user = await getCurrentUser();
   const authMessage = searchParams?.authMessage || "";
   const authError = searchParams?.authError || "";
+  const authView = searchParams?.authView || "login";
+  const signupEmail = searchParams?.signupEmail || "";
   const [devices, commands] = user
     ? await Promise.all([listDevices(user.id), listRecentCommands(user.id)])
     : [[], []];
@@ -278,33 +336,13 @@ export default async function HomePage({ searchParams }) {
     <main className="page">
       <div className="shell cloudShell">
         <section className="panel hero">
-          <p className="eyebrow">Arduino Cloud Style MVP</p>
-          <h1>Connect Arduino devices and operate them from one dashboard.</h1>
+          <p className="eyebrow">Meenakshi Cloud</p>
+          <h1>{user ? "Your device command center is live." : "A sharper login experience for your device cloud."}</h1>
           <p>
-            Register each board, copy its MQTT topics, and send commands from
-            the web console. This gives you a starting point for an
-            Arduino-Cloud-like application built with Next.js, PostgreSQL, a
-            C++ control API, and Mosquitto.
+            {user
+              ? "Manage devices, MQTT credentials, and command history from one place."
+              : "Sign in from the center of the page, or create a new account with email OTP verification in a cleaner flow."}
           </p>
-
-          <div className="statusRow">
-            <div className="pill">
-              <span className="dot" />
-              <span>{user ? `Signed in as ${user.full_name}` : "User authentication"}</span>
-            </div>
-            <div className="pill">
-              <span className="dot" />
-              <span>Per-device MQTT topics</span>
-            </div>
-            <div className="pill">
-              <span className="dot" />
-              <span>Command history</span>
-            </div>
-            <div className="pill">
-              <span className="dot" />
-              <span>Arduino-ready flow</span>
-            </div>
-          </div>
         </section>
 
         <section className="panel stack">
@@ -312,34 +350,103 @@ export default async function HomePage({ searchParams }) {
           {authError ? <p className="banner bannerError">{authError}</p> : null}
 
           {!user ? (
-            <div className="authGrid">
-              <div className="historyCard">
-                <strong>Create User Account</strong>
-                <p className="empty">
-                  Register first, then log in to connect and control an Arduino device.
-                </p>
-                <form action={registerUser} className="authForm">
-                  <input className="input" name="fullName" placeholder="Meenakshi" required />
-                  <input className="input" name="email" placeholder="meenakshi@example.com" type="email" required />
-                  <input className="input" name="password" placeholder="Minimum 6 characters" type="password" required />
-                  <button className="button buttonOn" type="submit">
-                    Register User
-                  </button>
-                </form>
+            <div className="authCenter">
+              <div className="authTabs">
+                <a
+                  className={`authTab ${authView === "login" ? "authTabActive" : ""}`}
+                  href="/?authView=login"
+                >
+                  Login
+                </a>
+                <a
+                  className={`authTab ${authView === "register" ? "authTabActive" : ""}`}
+                  href="/?authView=register"
+                >
+                  Register
+                </a>
+                <a
+                  className={`authTab ${authView === "verify" ? "authTabActive" : ""}`}
+                  href={buildRedirect("/", { authView: "verify", signupEmail })}
+                >
+                  Verify OTP
+                </a>
               </div>
 
-              <div className="historyCard">
-                <strong>Login</strong>
-                <p className="empty">
-                  After login, you can connect an existing Arduino or register a new board.
-                </p>
-                <form action={loginUser} className="authForm">
-                  <input className="input" name="email" placeholder="meenakshi@example.com" type="email" required />
-                  <input className="input" name="password" placeholder="Your password" type="password" required />
-                  <button className="button buttonOff" type="submit">
-                    Login
-                  </button>
-                </form>
+              <div className="authStage">
+                <div className="authCard authCardFeatured">
+                  {authView === "register" ? (
+                    <>
+                      <p className="authKicker">New User</p>
+                      <h2>Create your account</h2>
+                      <p className="authCopy">
+                        We will email a one-time password to verify your address before activating the account.
+                      </p>
+                      <form action={startRegistration} className="authForm">
+                        <input className="input" name="fullName" placeholder="Meenakshi" required />
+                        <input className="input" name="email" placeholder="meenakshi@example.com" type="email" required />
+                        <input className="input" name="password" placeholder="Choose a password" type="password" required />
+                        <button className="button buttonOn" type="submit">
+                          Send Email OTP
+                        </button>
+                      </form>
+                    </>
+                  ) : authView === "verify" ? (
+                    <>
+                      <p className="authKicker">Verify</p>
+                      <h2>Confirm your email</h2>
+                      <p className="authCopy">
+                        Enter the 6-digit code we sent to your inbox to finish registration.
+                      </p>
+                      <form action={verifyRegistration} className="authForm">
+                        <input
+                          className="input"
+                          name="email"
+                          placeholder="meenakshi@example.com"
+                          type="email"
+                          defaultValue={signupEmail}
+                          required
+                        />
+                        <input
+                          className="input inputOtp"
+                          name="otpCode"
+                          placeholder="123456"
+                          inputMode="numeric"
+                          pattern="[0-9]{6}"
+                          maxLength="6"
+                          required
+                        />
+                        <button className="button buttonOn" type="submit">
+                          Verify And Continue
+                        </button>
+                      </form>
+                    </>
+                  ) : (
+                    <>
+                      <p className="authKicker">Welcome Back</p>
+                      <h2>Login</h2>
+                      <p className="authCopy">
+                        Sign in to manage your Arduino devices, commands, and MQTT credentials.
+                      </p>
+                      <form action={loginUser} className="authForm">
+                        <input className="input" name="email" placeholder="meenakshi@example.com" type="email" required />
+                        <input className="input" name="password" placeholder="Your password" type="password" required />
+                        <button className="button buttonOff" type="submit">
+                          Login
+                        </button>
+                      </form>
+                    </>
+                  )}
+                </div>
+
+                <div className="authSideNote">
+                  <strong>New here?</strong>
+                  <p className="empty">
+                    Start with Register, receive an email OTP, then verify it to unlock your dashboard.
+                  </p>
+                  <a className="button buttonGhost authLinkButton" href="/?authView=register">
+                    Register New User
+                  </a>
+                </div>
               </div>
             </div>
           ) : (
