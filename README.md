@@ -21,6 +21,14 @@ Required GitHub repository secrets:
 
 - `OCI_SSH_KEY`: private key contents from your `.key` file
 
+For email OTP signup in the Next.js app, configure these environment variables for `next-app`:
+
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- optional `EMAIL_FROM` if you want something other than `venkatesh.neerupudi@gmail.com`
+
 Deployment flow:
 
 1. Push code to GitHub.

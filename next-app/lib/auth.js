@@ -6,6 +6,7 @@ const db = require("./db");
 const scrypt = promisify(scryptCallback);
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const OTP_TTL_MINUTES = 10;
+const DEFAULT_FROM_EMAIL = "venkatesh.neerupudi@gmail.com";
 let authSchemaReadyPromise;
 
 async function ensureAuthSchema() {
@@ -81,7 +82,7 @@ async function sendOtpEmail({ email, fullName, otpCode }) {
   }
 
   const transporter = nodemailer.createTransport(transportConfig);
-  const from = process.env.EMAIL_FROM || transportConfig.auth.user;
+  const from = process.env.EMAIL_FROM || DEFAULT_FROM_EMAIL;
 
   await transporter.sendMail({
     from,
