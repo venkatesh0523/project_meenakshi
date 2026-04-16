@@ -11,12 +11,10 @@ import {
 } from "../lib/devices";
 import {
   authenticateUser,
-  beginPendingUserRegistration,
   createSession,
+  createUser,
   deleteSession,
-  getUserBySessionToken,
-  OTP_TTL_MINUTES,
-  verifyPendingUserRegistration
+  getUserBySessionToken
 } from "../lib/auth";
 
 function normalizeField(value) {
@@ -51,7 +49,7 @@ async function requireUser() {
   return user;
 }
 
-async function startRegistration(formData) {
+async function registerUser(formData) {
   "use server";
 
   const fullName = normalizeField(formData.get("fullName"));
@@ -68,54 +66,10 @@ async function startRegistration(formData) {
   }
 
   try {
-    await beginPendingUserRegistration({
+    const user = await createUser({
       fullName,
       email,
       password
-    });
-  } catch (error) {
-    const message =
-      error.message === "SMTP is not configured"
-        ? "Registration email is not configured yet. Add SMTP settings first."
-        : "Unable to register. That email may already be in use.";
-
-    redirect(
-      buildRedirect("/", {
-        authError: message,
-        authView: "register"
-      })
-    );
-  }
-
-  redirect(
-    buildRedirect("/", {
-      authMessage: `We sent a ${OTP_TTL_MINUTES}-minute verification code to ${email}.`,
-      authView: "verify",
-      signupEmail: email
-    })
-  );
-}
-
-async function verifyRegistration(formData) {
-  "use server";
-
-  const email = normalizeField(formData.get("email"));
-  const otpCode = normalizeField(formData.get("otpCode"));
-
-  if (!email || otpCode.length !== 6) {
-    redirect(
-      buildRedirect("/", {
-        authError: "Enter the email address and 6-digit OTP code.",
-        authView: "verify",
-        signupEmail: email
-      })
-    );
-  }
-
-  try {
-    const user = await verifyPendingUserRegistration({
-      email,
-      otpCode
     });
     const session = await createSession(user.id);
 
@@ -127,23 +81,15 @@ async function verifyRegistration(formData) {
       path: "/"
     });
   } catch (error) {
-    const message =
-      error.message === "OTP_EXPIRED"
-        ? "That OTP has expired. Start registration again to receive a fresh code."
-        : error.message === "OTP_INVALID"
-          ? "That OTP is not valid."
-          : "We could not verify that code.";
-
     redirect(
       buildRedirect("/", {
-        authError: message,
-        authView: "verify",
-        signupEmail: email
+        authError: "Unable to register. That email may already be in use.",
+        authView: "register"
       })
     );
   }
 
-  redirect(buildRedirect("/", { authMessage: "Your account is verified and ready to use." }));
+  redirect(buildRedirect("/", { authMessage: "Account created. You can connect your Arduino now." }));
 }
 
 async function loginUser(formData) {
@@ -326,7 +272,6 @@ export default async function HomePage({ searchParams }) {
   const authMessage = searchParams?.authMessage || "";
   const authError = searchParams?.authError || "";
   const authView = searchParams?.authView || "login";
-  const signupEmail = searchParams?.signupEmail || "";
   const [devices, commands] = user
     ? await Promise.all([listDevices(user.id), listRecentCommands(user.id)])
     : [[], []];
@@ -351,27 +296,6 @@ export default async function HomePage({ searchParams }) {
 
           {!user ? (
             <div className="authCenter">
-              <div className="authTabs">
-                <a
-                  className={`authTab ${authView === "login" ? "authTabActive" : ""}`}
-                  href="/?authView=login"
-                >
-                  Login
-                </a>
-                <a
-                  className={`authTab ${authView === "register" ? "authTabActive" : ""}`}
-                  href="/?authView=register"
-                >
-                  Register
-                </a>
-                <a
-                  className={`authTab ${authView === "verify" ? "authTabActive" : ""}`}
-                  href={buildRedirect("/", { authView: "verify", signupEmail })}
-                >
-                  Verify OTP
-                </a>
-              </div>
-
               <div className="authStage">
                 <div className="authCard authCardFeatured">
                   {authView === "register" ? (
@@ -379,46 +303,19 @@ export default async function HomePage({ searchParams }) {
                       <p className="authKicker">New User</p>
                       <h2>Create your account</h2>
                       <p className="authCopy">
-                        We will email a one-time password to verify your address before activating the account.
+                        Create an account to start managing your Arduino devices from one dashboard.
                       </p>
-                      <form action={startRegistration} className="authForm">
+                      <form action={registerUser} className="authForm">
                         <input className="input" name="fullName" placeholder="Meenakshi" required />
                         <input className="input" name="email" placeholder="meenakshi@example.com" type="email" required />
                         <input className="input" name="password" placeholder="Choose a password" type="password" required />
                         <button className="button buttonOn" type="submit">
-                          Send Email OTP
+                          Register
                         </button>
                       </form>
-                    </>
-                  ) : authView === "verify" ? (
-                    <>
-                      <p className="authKicker">Verify</p>
-                      <h2>Confirm your email</h2>
-                      <p className="authCopy">
-                        Enter the 6-digit code we sent to your inbox to finish registration.
+                      <p className="authFooterLink">
+                        Already have an account? <a href="/?authView=login">Login</a>
                       </p>
-                      <form action={verifyRegistration} className="authForm">
-                        <input
-                          className="input"
-                          name="email"
-                          placeholder="meenakshi@example.com"
-                          type="email"
-                          defaultValue={signupEmail}
-                          required
-                        />
-                        <input
-                          className="input inputOtp"
-                          name="otpCode"
-                          placeholder="123456"
-                          inputMode="numeric"
-                          pattern="[0-9]{6}"
-                          maxLength="6"
-                          required
-                        />
-                        <button className="button buttonOn" type="submit">
-                          Verify And Continue
-                        </button>
-                      </form>
                     </>
                   ) : (
                     <>
@@ -434,6 +331,9 @@ export default async function HomePage({ searchParams }) {
                           Login
                         </button>
                       </form>
+                      <p className="authFooterLink">
+                        New user? <a href="/?authView=register">Create an account</a>
+                      </p>
                     </>
                   )}
                 </div>
@@ -441,10 +341,10 @@ export default async function HomePage({ searchParams }) {
                 <div className="authSideNote">
                   <strong>New here?</strong>
                   <p className="empty">
-                    Start with Register, receive an email OTP, then verify it to unlock your dashboard.
+                    Use the small register link if you do not have an account yet.
                   </p>
                   <a className="button buttonGhost authLinkButton" href="/?authView=register">
-                    Register New User
+                    Go To Register
                   </a>
                 </div>
               </div>
