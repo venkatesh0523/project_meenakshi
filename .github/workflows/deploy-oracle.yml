@@ -6,13 +6,23 @@ on:
       - main
       - master
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.OCI_SSH_KEY }}" ]; then
+            echo "GitHub secret OCI_SSH_KEY is missing."
+            exit 1
+          fi
 
       - name: Package application
         run: |
