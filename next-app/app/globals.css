@@ -1,0 +1,374 @@
+:root {
+  --bg: #f4efe6;
+  --panel: rgba(255, 251, 246, 0.9);
+  --text: #1f2a1f;
+  --muted: #5f675d;
+  --line: rgba(31, 42, 31, 0.12);
+  --primary: #2f6b3b;
+  --primary-dark: #1f4d28;
+  --secondary: #cb7c47;
+  --shadow: 0 24px 70px rgba(52, 61, 38, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Georgia, "Times New Roman", serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(203, 124, 71, 0.18), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(47, 107, 59, 0.18), transparent 30%),
+    linear-gradient(135deg, #f6f0e8 0%, #dde8d6 100%);
+}
+
+a {
+  color: inherit;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 32px;
+}
+
+.shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 24px;
+}
+
+.cloudShell {
+  grid-template-columns: 1fr;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+}
+
+.hero {
+  padding: 40px;
+  display: grid;
+  gap: 24px;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.75rem;
+  color: var(--secondary);
+  font-weight: 700;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 5vw, 4.8rem);
+  line-height: 0.95;
+  max-width: 9ch;
+}
+
+.hero p {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.statusRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(47, 107, 59, 0.16);
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2fb15b;
+}
+
+.stack {
+  display: grid;
+  gap: 18px;
+  padding: 28px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.miniCard,
+.historyCard {
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.miniCard strong,
+.historyCard strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.controlForm {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.authGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.authForm {
+  display: grid;
+  gap: 12px;
+}
+
+.registerForm {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  gap: 12px;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid rgba(31, 42, 31, 0.12);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
+.deviceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.deviceCard {
+  padding: 22px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+  display: grid;
+  gap: 16px;
+}
+
+.deviceTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.deviceTop h2 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.deviceLabel {
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  color: var(--secondary);
+  font-weight: 700;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 999px;
+  background: rgba(47, 107, 59, 0.08);
+  color: var(--primary-dark);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.statusBadge {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+}
+
+.statusBadge strong {
+  font-size: 0.9rem;
+}
+
+.statusBadge span {
+  font-size: 0.84rem;
+}
+
+.statusOnline {
+  background: rgba(47, 107, 59, 0.1);
+  border-color: rgba(47, 107, 59, 0.22);
+  color: #1f4d28;
+}
+
+.statusOffline {
+  background: rgba(203, 124, 71, 0.12);
+  border-color: rgba(203, 124, 71, 0.24);
+  color: #8a3b16;
+}
+
+.topicList {
+  display: grid;
+  gap: 10px;
+}
+
+.topicItem {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(246, 240, 232, 0.92);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.topicItem strong,
+.topicItem code {
+  display: block;
+}
+
+.topicItem strong {
+  margin-bottom: 8px;
+}
+
+.topicItem code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--primary-dark);
+}
+
+.button {
+  appearance: none;
+  border: none;
+  border-radius: 16px;
+  padding: 14px 20px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+}
+
+.buttonOn {
+  background: var(--primary);
+  color: white;
+}
+
+.buttonOff {
+  background: #2a342c;
+  color: white;
+}
+
+.buttonGhost {
+  background: rgba(47, 107, 59, 0.08);
+  color: var(--primary-dark);
+  border: 1px solid rgba(47, 107, 59, 0.18);
+}
+
+.banner {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  font-weight: 600;
+}
+
+.bannerSuccess {
+  background: rgba(47, 107, 59, 0.12);
+  border: 1px solid rgba(47, 107, 59, 0.18);
+  color: var(--primary-dark);
+}
+
+.bannerError {
+  background: rgba(203, 124, 71, 0.12);
+  border: 1px solid rgba(203, 124, 71, 0.18);
+  color: #8a3b16;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(31, 42, 31, 0.08);
+  text-align: left;
+  font-size: 0.96rem;
+}
+
+.table th {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.empty {
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .page {
+    padding: 18px;
+  }
+
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .cardGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .deviceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .authGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .registerForm {
+    grid-template-columns: 1fr;
+  }
+}

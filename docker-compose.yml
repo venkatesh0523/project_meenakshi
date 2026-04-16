@@ -1,0 +1,68 @@
+services:
+  next-app:
+    build:
+      context: ./next-app
+    container_name: farm-next-app
+    depends_on:
+      db:
+        condition: service_healthy
+      cpp-api:
+        condition: service_started
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/farmdb
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  cpp-api:
+    build:
+      context: ./cpp-api
+    container_name: farm-cpp-api
+    depends_on:
+      mqtt:
+        condition: service_started
+    environment:
+      PORT: 8080
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      LED_DEVICE_ID: arduino-led-01
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: farm-db
+    environment:
+      POSTGRES_DB: farmdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d farmdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: farm-mqtt
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  mosquitto_data:
+  mosquitto_log:

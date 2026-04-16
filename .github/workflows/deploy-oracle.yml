@@ -1,0 +1,50 @@
+name: Deploy To Oracle Cloud
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Package application
+        run: |
+          tar \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=node_modules \
+            --exclude=.next \
+            -czf project_meenakshi.tar.gz .
+
+      - name: Copy package to Oracle VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 141.148.239.103
+          username: ubuntu
+          key: ${{ secrets.OCI_SSH_KEY }}
+          source: "project_meenakshi.tar.gz"
+          target: "/tmp/project_meenakshi-deploy"
+
+      - name: Deploy on Oracle VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 141.148.239.103
+          username: ubuntu
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script_stop: true
+          script: |
+            export OCI_APP_DIR="${{ secrets.OCI_APP_DIR || '/home/ubuntu/project_meenakshi' }}"
+            export DEPLOY_ARCHIVE="/tmp/project_meenakshi-deploy/project_meenakshi.tar.gz"
+            export DEPLOY_WORKDIR="/tmp/project_meenakshi-workdir"
+            rm -rf "$DEPLOY_WORKDIR"
+            mkdir -p "$DEPLOY_WORKDIR"
+            tar -xzf "$DEPLOY_ARCHIVE" -C "$DEPLOY_WORKDIR"
+            export SOURCE_DIR="$DEPLOY_WORKDIR"
+            bash "$DEPLOY_WORKDIR/scripts/deploy-on-server.sh"

@@ -1,0 +1,137 @@
+const db = require("./db");
+const { randomBytes } = require("node:crypto");
+
+function generateDeviceSecret() {
+  return randomBytes(18).toString("base64url");
+}
+
+async function listDevices(userId) {
+  const result = await db.query(
+    `
+      SELECT
+        device_id,
+        device_name,
+        device_type,
+        location,
+        device_secret,
+        last_seen_at,
+        last_status,
+        created_at
+      FROM devices
+      WHERE owner_user_id = $1
+      ORDER BY created_at ASC
+    `,
+    [userId]
+  );
+
+  return result.rows;
+}
+
+async function listRecentCommands(userId, limit = 20) {
+  const result = await db.query(
+    `
+      SELECT c.id, c.device_id, c.command, c.source, c.created_at
+      FROM led_commands c
+      JOIN devices d ON d.device_id = c.device_id
+      WHERE d.owner_user_id = $1
+      ORDER BY c.created_at DESC
+      LIMIT $2
+    `,
+    [userId, limit]
+  );
+
+  return result.rows;
+}
+
+async function createDevice({
+  deviceId,
+  deviceName,
+  deviceType,
+  location,
+  ownerUserId
+}) {
+  const deviceSecret = generateDeviceSecret();
+
+  return db.query(
+    `
+      INSERT INTO devices (
+        device_id,
+        device_name,
+        device_type,
+        location,
+        device_secret,
+        owner_user_id
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `,
+    [deviceId, deviceName, deviceType, location || null, deviceSecret, ownerUserId]
+  );
+}
+
+async function connectDeviceToUser({ deviceId, userId }) {
+  const result = await db.query(
+    `
+      UPDATE devices
+      SET
+        owner_user_id = $2,
+        device_secret = COALESCE(device_secret, $3)
+      WHERE device_id = $1
+        AND (owner_user_id IS NULL OR owner_user_id = $2)
+      RETURNING device_id, device_secret
+    `,
+    [deviceId, userId, generateDeviceSecret()]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function getDeviceForUser(deviceId, userId) {
+  const result = await db.query(
+    `
+      SELECT device_id
+      FROM devices
+      WHERE device_id = $1 AND owner_user_id = $2
+    `,
+    [deviceId, userId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function saveCommand({ deviceId, command, source = "next-app" }) {
+  return db.query(
+    `
+      INSERT INTO led_commands (device_id, command, source)
+      VALUES ($1, $2, $3)
+    `,
+    [deviceId, command, source]
+  );
+}
+
+async function updateDeviceHeartbeat({ deviceId, deviceSecret, status = "online" }) {
+  const result = await db.query(
+    `
+      UPDATE devices
+      SET
+        last_seen_at = NOW(),
+        last_status = $3
+      WHERE device_id = $1
+        AND device_secret = $2
+      RETURNING device_id, last_seen_at, last_status
+    `,
+    [deviceId, deviceSecret, status]
+  );
+
+  return result.rows[0] || null;
+}
+
+module.exports = {
+  connectDeviceToUser,
+  createDevice,
+  generateDeviceSecret,
+  getDeviceForUser,
+  listDevices,
+  listRecentCommands,
+  saveCommand,
+  updateDeviceHeartbeat
+};
