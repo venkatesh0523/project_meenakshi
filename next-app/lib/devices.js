@@ -1,11 +1,30 @@
 const db = require("./db");
 const { randomBytes } = require("node:crypto");
+let devicesSchemaReadyPromise;
 
 function generateDeviceSecret() {
   return randomBytes(18).toString("base64url");
 }
 
+async function ensureDevicesSchema() {
+  if (!devicesSchemaReadyPromise) {
+    devicesSchemaReadyPromise = db.query(`
+      ALTER TABLE devices
+      ADD COLUMN IF NOT EXISTS wifi_ssid VARCHAR(150);
+
+      ALTER TABLE devices
+      ADD COLUMN IF NOT EXISTS wifi_password TEXT;
+
+      ALTER TABLE devices
+      ADD COLUMN IF NOT EXISTS wifi_configured_at TIMESTAMPTZ;
+    `);
+  }
+
+  await devicesSchemaReadyPromise;
+}
+
 async function listDevices(userId) {
+  await ensureDevicesSchema();
   const result = await db.query(
     `
       SELECT
@@ -30,6 +49,7 @@ async function listDevices(userId) {
 }
 
 async function listKnownWifiNetworks(userId) {
+  await ensureDevicesSchema();
   const result = await db.query(
     `
       SELECT DISTINCT wifi_ssid
@@ -104,6 +124,7 @@ async function connectDeviceToUser({ deviceId, userId }) {
 }
 
 async function getDeviceForUser(deviceId, userId) {
+  await ensureDevicesSchema();
   const result = await db.query(
     `
       SELECT device_id, device_name, wifi_ssid, last_seen_at, last_status
@@ -122,6 +143,7 @@ async function saveDeviceWifiConfiguration({
   wifiSsid,
   wifiPassword
 }) {
+  await ensureDevicesSchema();
   const result = await db.query(
     `
       UPDATE devices
