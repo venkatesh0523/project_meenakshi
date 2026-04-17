@@ -41,6 +41,16 @@ async function getCurrentUser() {
   return getUserBySessionToken(sessionToken);
 }
 
+function getSessionCookieOptions(expiresAt) {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.ENABLE_SECURE_COOKIES === "true",
+    expires: expiresAt,
+    path: "/"
+  };
+}
+
 async function requireUser() {
   const user = await getCurrentUser();
 
@@ -75,13 +85,7 @@ async function registerUser(formData) {
     });
     const session = await createSession(user.id);
 
-    cookies().set("session_token", session.sessionToken, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      expires: session.expiresAt,
-      path: "/"
-    });
+    cookies().set("session_token", session.sessionToken, getSessionCookieOptions(session.expiresAt));
   } catch (error) {
     redirect(
       buildRedirect("/", {
@@ -107,13 +111,7 @@ async function loginUser(formData) {
 
   const session = await createSession(user.id);
 
-  cookies().set("session_token", session.sessionToken, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    expires: session.expiresAt,
-    path: "/"
-  });
+  cookies().set("session_token", session.sessionToken, getSessionCookieOptions(session.expiresAt));
 
   redirect(buildRedirect("/", { authMessage: "Logged in. Connect your Arduino device below." }));
 }
