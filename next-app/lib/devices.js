@@ -13,6 +13,8 @@ async function listDevices(userId) {
         device_name,
         device_type,
         location,
+        wifi_ssid,
+        wifi_configured_at,
         device_secret,
         last_seen_at,
         last_status,
@@ -25,6 +27,22 @@ async function listDevices(userId) {
   );
 
   return result.rows;
+}
+
+async function listKnownWifiNetworks(userId) {
+  const result = await db.query(
+    `
+      SELECT DISTINCT wifi_ssid
+      FROM devices
+      WHERE owner_user_id = $1
+        AND wifi_ssid IS NOT NULL
+        AND wifi_ssid <> ''
+      ORDER BY wifi_ssid ASC
+    `,
+    [userId]
+  );
+
+  return result.rows.map((row) => row.wifi_ssid);
 }
 
 async function listRecentCommands(userId, limit = 20) {
@@ -88,11 +106,34 @@ async function connectDeviceToUser({ deviceId, userId }) {
 async function getDeviceForUser(deviceId, userId) {
   const result = await db.query(
     `
-      SELECT device_id
+      SELECT device_id, device_name, wifi_ssid, last_seen_at, last_status
       FROM devices
       WHERE device_id = $1 AND owner_user_id = $2
     `,
     [deviceId, userId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function saveDeviceWifiConfiguration({
+  deviceId,
+  userId,
+  wifiSsid,
+  wifiPassword
+}) {
+  const result = await db.query(
+    `
+      UPDATE devices
+      SET
+        wifi_ssid = $3,
+        wifi_password = $4,
+        wifi_configured_at = NOW()
+      WHERE device_id = $1
+        AND owner_user_id = $2
+      RETURNING device_id, wifi_ssid, wifi_configured_at, last_seen_at, last_status
+    `,
+    [deviceId, userId, wifiSsid, wifiPassword]
   );
 
   return result.rows[0] || null;
@@ -130,8 +171,10 @@ module.exports = {
   createDevice,
   generateDeviceSecret,
   getDeviceForUser,
+  listKnownWifiNetworks,
   listDevices,
   listRecentCommands,
   saveCommand,
+  saveDeviceWifiConfiguration,
   updateDeviceHeartbeat
 };

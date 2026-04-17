@@ -190,6 +190,13 @@ a {
   gap: 12px;
 }
 
+.sectionActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .cardGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -225,6 +232,24 @@ a {
 .authForm {
   display: grid;
   gap: 12px;
+}
+
+.connectDeviceCard {
+  display: grid;
+  gap: 14px;
+}
+
+.connectDeviceForm {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.connectDeviceActions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
 }
 
 .registerForm {
@@ -360,6 +385,13 @@ a {
   transform: translateY(-1px);
 }
 
+.buttonLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .buttonOn {
   background: var(--primary);
   color: white;
@@ -439,6 +471,10 @@ a {
   }
 
   .authStage {
+    grid-template-columns: 1fr;
+  }
+
+  .connectDeviceForm {
     grid-template-columns: 1fr;
   }
 

@@ -5,8 +5,10 @@ import {
   connectDeviceToUser,
   createDevice,
   getDeviceForUser,
+  listKnownWifiNetworks,
   listDevices,
   listRecentCommands,
+  saveDeviceWifiConfiguration,
   saveCommand
 } from "../lib/devices";
 import {
@@ -161,6 +163,49 @@ async function registerDevice(formData) {
   redirect(buildRedirect("/", { authMessage: `Device ${deviceId} registered.` }));
 }
 
+async function saveWifiForDevice(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const deviceId = normalizeField(formData.get("deviceId"));
+  const selectedWifi = normalizeField(formData.get("selectedWifi"));
+  const manualWifi = normalizeField(formData.get("manualWifi"));
+  const wifiPassword = normalizeField(formData.get("wifiPassword"));
+  const wifiSsid = manualWifi || selectedWifi;
+
+  if (!deviceId || !wifiSsid || !wifiPassword) {
+    redirect(
+      buildRedirect("/", {
+        authError: "Choose a device, select a Wi-Fi network, and enter the password.",
+        deviceSetup: "wifi"
+      })
+    );
+  }
+
+  const updatedDevice = await saveDeviceWifiConfiguration({
+    deviceId,
+    userId: user.id,
+    wifiSsid,
+    wifiPassword
+  });
+
+  if (!updatedDevice) {
+    redirect(
+      buildRedirect("/", {
+        authError: "We could not save Wi-Fi settings for that device.",
+        deviceSetup: "wifi"
+      })
+    );
+  }
+
+  revalidatePath("/");
+  redirect(
+    buildRedirect("/", {
+      authMessage: `Wi-Fi saved for ${deviceId}. Connection status will update after the device reconnects.`
+    })
+  );
+}
+
 async function connectArduinoDevice(formData) {
   "use server";
 
@@ -267,14 +312,48 @@ function getDeviceConnectionState(device) {
   };
 }
 
+function getWifiProvisionState(device) {
+  if (!device.wifi_ssid) {
+    return {
+      label: "Wi-Fi not configured",
+      subtitle: "Open Connect Device to save network details",
+      tone: "statusOffline"
+    };
+  }
+
+  if (device.last_seen_at) {
+    const lastSeen = new Date(device.last_seen_at);
+    const ageMs = Date.now() - lastSeen.getTime();
+
+    if (ageMs <= 90 * 1000) {
+      return {
+        label: "Connected",
+        subtitle: `Connected to ${device.wifi_ssid}`,
+        tone: "statusOnline"
+      };
+    }
+  }
+
+  return {
+    label: "Waiting for device",
+    subtitle: `Saved network: ${device.wifi_ssid}`,
+    tone: "statusOffline"
+  };
+}
+
 export default async function HomePage({ searchParams }) {
   const user = await getCurrentUser();
   const authMessage = searchParams?.authMessage || "";
   const authError = searchParams?.authError || "";
   const authView = searchParams?.authView || "login";
-  const [devices, commands] = user
-    ? await Promise.all([listDevices(user.id), listRecentCommands(user.id)])
-    : [[], []];
+  const deviceSetup = searchParams?.deviceSetup || "";
+  const [devices, commands, knownWifiNetworks] = user
+    ? await Promise.all([
+        listDevices(user.id),
+        listRecentCommands(user.id),
+        listKnownWifiNetworks(user.id)
+      ])
+    : [[], [], []];
   const onlineCount = devices.filter((device) => getDeviceConnectionState(device).isOnline).length;
 
   return (
@@ -341,12 +420,69 @@ export default async function HomePage({ searchParams }) {
             <>
               <div className="sectionHeader">
                 <strong>Welcome, {user.full_name}</strong>
-                <form action={logoutUser}>
-                  <button className="button buttonGhost" type="submit">
-                    Logout
-                  </button>
-                </form>
+                <div className="sectionActions">
+                  <a
+                    className="button buttonOff buttonLink"
+                    href={buildRedirect("/", { deviceSetup: "wifi" })}
+                  >
+                    Connect Device
+                  </a>
+                  <form action={logoutUser}>
+                    <button className="button buttonGhost" type="submit">
+                      Logout
+                    </button>
+                  </form>
+                </div>
               </div>
+
+              {deviceSetup === "wifi" ? (
+                <div className="historyCard connectDeviceCard">
+                  <strong>Connect Device</strong>
+                  <p className="empty">
+                    Choose your device, pick one of the available saved Wi-Fi networks, or enter a new one, then save the password.
+                  </p>
+                  <form action={saveWifiForDevice} className="connectDeviceForm">
+                    <select className="input" name="deviceId" defaultValue="" required>
+                      <option value="" disabled>
+                        Select device
+                      </option>
+                      {devices.map((device) => (
+                        <option key={device.device_id} value={device.device_id}>
+                          {device.device_name} ({device.device_id})
+                        </option>
+                      ))}
+                    </select>
+                    <select className="input" name="selectedWifi" defaultValue="">
+                      <option value="">Select saved Wi-Fi network</option>
+                      {knownWifiNetworks.map((ssid) => (
+                        <option key={ssid} value={ssid}>
+                          {ssid}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className="input"
+                      name="manualWifi"
+                      placeholder="Or enter new Wi-Fi name"
+                    />
+                    <input
+                      className="input"
+                      name="wifiPassword"
+                      placeholder="Wi-Fi password"
+                      type="password"
+                      required
+                    />
+                    <div className="connectDeviceActions">
+                      <button className="button buttonOn" type="submit">
+                        Save Wi-Fi
+                      </button>
+                      <a className="button buttonGhost buttonLink" href="/">
+                        Cancel
+                      </a>
+                    </div>
+                  </form>
+                </div>
+              ) : null}
 
               <div className="authGrid">
                 <div className="historyCard">
@@ -404,6 +540,7 @@ export default async function HomePage({ searchParams }) {
             <div className="deviceGrid">
               {devices.map((device) => {
                 const connection = getDeviceConnectionState(device);
+                const wifiState = getWifiProvisionState(device);
                 return (
                   <article key={device.device_id} className="deviceCard">
                       <div className="deviceTop">
@@ -422,6 +559,11 @@ export default async function HomePage({ searchParams }) {
                         <span>{connection.subtitle}</span>
                       </div>
 
+                      <div className={`statusBadge ${wifiState.tone}`}>
+                        <strong>{wifiState.label}</strong>
+                        <span>{wifiState.subtitle}</span>
+                      </div>
+
                       <p className="empty">
                         {device.location || "No location set"}
                       </p>
@@ -434,6 +576,10 @@ export default async function HomePage({ searchParams }) {
                         <div className="topicItem">
                           <strong>Status Topic</strong>
                           <code>{formatTopic(device.device_id, "status")}</code>
+                        </div>
+                        <div className="topicItem">
+                          <strong>Wi-Fi Network</strong>
+                          <code>{device.wifi_ssid || "Not saved yet"}</code>
                         </div>
                         <div className="topicItem">
                           <strong>MQTT Username</strong>
