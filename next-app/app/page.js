@@ -158,7 +158,13 @@ async function registerDevice(formData) {
   }
 
   revalidatePath("/");
-  redirect(buildRedirect("/", { authMessage: `Device ${deviceId} registered.` }));
+  redirect(
+    buildRedirect("/", {
+      authMessage: `Device ${deviceId} registered. Now save Wi-Fi for it.`,
+      deviceSetup: "wifi",
+      selectedDevice: deviceId
+    })
+  );
 }
 
 async function saveWifiForDevice(formData) {
@@ -174,8 +180,9 @@ async function saveWifiForDevice(formData) {
   if (!deviceId || !wifiSsid || !wifiPassword) {
     redirect(
       buildRedirect("/", {
-        authError: "Choose a device, select a Wi-Fi network, and enter the password.",
-        deviceSetup: "wifi"
+        authError: "Choose a device, enter the Wi-Fi name, and enter the password.",
+        deviceSetup: "wifi",
+        selectedDevice: deviceId
       })
     );
   }
@@ -191,7 +198,8 @@ async function saveWifiForDevice(formData) {
     redirect(
       buildRedirect("/", {
         authError: "We could not save Wi-Fi settings for that device.",
-        deviceSetup: "wifi"
+        deviceSetup: "wifi",
+        selectedDevice: deviceId
       })
     );
   }
@@ -199,7 +207,9 @@ async function saveWifiForDevice(formData) {
   revalidatePath("/");
   redirect(
     buildRedirect("/", {
-      authMessage: `Wi-Fi saved for ${deviceId}. Connection status will update after the device reconnects.`
+      authMessage: `Wi-Fi saved for ${deviceId}. Connection status will update after the device reconnects.`,
+      deviceSetup: "wifi",
+      selectedDevice: deviceId
     })
   );
 }
@@ -228,7 +238,13 @@ async function connectArduinoDevice(formData) {
   }
 
   revalidatePath("/");
-  redirect(buildRedirect("/", { authMessage: `Arduino device ${deviceId} connected.` }));
+  redirect(
+    buildRedirect("/", {
+      authMessage: `Arduino device ${deviceId} connected. Now save Wi-Fi for it.`,
+      deviceSetup: "wifi",
+      selectedDevice: deviceId
+    })
+  );
 }
 
 async function sendDeviceCommand(formData) {
@@ -345,6 +361,7 @@ export default async function HomePage({ searchParams }) {
   const authError = searchParams?.authError || "";
   const authView = searchParams?.authView || "login";
   const deviceSetup = searchParams?.deviceSetup || "";
+  const selectedDevice = searchParams?.selectedDevice || "";
   const [devices, commands, knownWifiNetworks] = user
     ? await Promise.all([
         listDevices(user.id),
@@ -440,7 +457,9 @@ export default async function HomePage({ searchParams }) {
                     Choose your device, pick one of the available saved Wi-Fi networks, or enter a new one, then save the password.
                   </p>
                   <form action={saveWifiForDevice} className="connectDeviceForm">
-                    <select className="input" name="deviceId" defaultValue="" required>
+                    <label className="fieldGroup">
+                      <span className="fieldLabel">Device</span>
+                      <select className="input" name="deviceId" defaultValue={selectedDevice} required>
                       <option value="" disabled>
                         Select device
                       </option>
@@ -449,27 +468,46 @@ export default async function HomePage({ searchParams }) {
                           {device.device_name} ({device.device_id})
                         </option>
                       ))}
-                    </select>
-                    <select className="input" name="selectedWifi" defaultValue="">
+                      </select>
+                    </label>
+                    <label className="fieldGroup">
+                      <span className="fieldLabel">Saved Wi-Fi names</span>
+                      <select className="input" name="selectedWifi" defaultValue="">
                       <option value="">Select saved Wi-Fi network</option>
                       {knownWifiNetworks.map((ssid) => (
                         <option key={ssid} value={ssid}>
                           {ssid}
                         </option>
                       ))}
-                    </select>
-                    <input
+                      </select>
+                    </label>
+                    <label className="fieldGroup">
+                      <span className="fieldLabel">Wi-Fi name (SSID)</span>
+                      <input
                       className="input"
                       name="manualWifi"
-                      placeholder="Or enter new Wi-Fi name"
+                      placeholder="Enter Wi-Fi name"
+                      list="knownWifiOptions"
                     />
-                    <input
+                    </label>
+                    <datalist id="knownWifiOptions">
+                      {knownWifiNetworks.map((ssid) => (
+                        <option key={ssid} value={ssid} />
+                      ))}
+                    </datalist>
+                    <label className="fieldGroup">
+                      <span className="fieldLabel">Wi-Fi password</span>
+                      <input
                       className="input"
                       name="wifiPassword"
                       placeholder="Wi-Fi password"
                       type="password"
                       required
                     />
+                    </label>
+                    <p className="fieldHint">
+                      The app can suggest previously saved Wi-Fi names, but it cannot detect or read Wi-Fi passwords. Enter the password manually.
+                    </p>
                     <div className="connectDeviceActions">
                       <button className="button buttonOn" type="submit">
                         Save Wi-Fi
