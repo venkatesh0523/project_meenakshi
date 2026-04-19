@@ -2,15 +2,15 @@
 #include <PubSubClient.h>
 
 const char* WIFI_SSID = "Telia-B798AC";
-const char* WIFI_PASSWORD = "CHANGE_ME";
+const char* WIFI_PASSWORD = "pnK7x6nhh222h2wx";
 
-const char* MQTT_HOST = "172.18.116.147";
+const char* MQTT_HOST = "192.168.1.112";
 const int MQTT_PORT = 1883;
-const char* CLOUD_HOST = "172.18.116.147";
+const char* CLOUD_HOST = "192.168.1.112";
 const int CLOUD_PORT = 3000;
 
 const char* DEVICE_ID = "a119c318-d7c7-41af-972d-5587e8506a43";
-const char* DEVICE_SECRET = "COPY_DEVICE_SECRET_FROM_DASHBOARD";
+const char* DEVICE_SECRET = "Dz9rn31gDj8nA5mZ6vsGEfI5";
 
 const int LED_PIN = LED_BUILTIN;
 const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
@@ -18,6 +18,7 @@ const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 unsigned long lastHeartbeatAt = 0;
+unsigned long lastMqttRetryAt = 0;
 
 String commandTopic = String("farm1/") + DEVICE_ID + "/cmd";
 String statusTopic = String("farm1/") + DEVICE_ID + "/status";
@@ -119,20 +120,20 @@ void connectMqtt() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(onMessage);
 
-  while (!mqttClient.connected() && WiFi.status() == WL_CONNECTED) {
-    Serial.print("Connecting to MQTT as ");
-    Serial.println(DEVICE_ID);
+  if (mqttClient.connected() || WiFi.status() != WL_CONNECTED) {
+    return;
+  }
 
-    if (mqttClient.connect(DEVICE_ID, DEVICE_ID, DEVICE_SECRET)) {
-      Serial.println("MQTT connected");
-      mqttClient.subscribe(commandTopic.c_str());
-      publishStatus("READY");
-      sendHeartbeat("online");
-    } else {
-      Serial.print("MQTT connect failed, rc=");
-      Serial.println(mqttClient.state());
-      delay(2000);
-    }
+  Serial.print("Connecting to MQTT as ");
+  Serial.println(DEVICE_ID);
+
+  if (mqttClient.connect(DEVICE_ID, DEVICE_ID, DEVICE_SECRET)) {
+    Serial.println("MQTT connected");
+    mqttClient.subscribe(commandTopic.c_str());
+    publishStatus("READY");
+  } else {
+    Serial.print("MQTT connect failed, rc=");
+    Serial.println(mqttClient.state());
   }
 }
 
@@ -145,6 +146,7 @@ void setup() {
   Serial.println("Booting UNO R4 WiFi cloud device");
 
   if (connectWifi()) {
+    sendHeartbeat("online");
     connectMqtt();
   }
 }
@@ -154,13 +156,19 @@ void loop() {
     connectWifi();
   }
 
-  if (WiFi.status() == WL_CONNECTED && !mqttClient.connected()) {
+  if (
+      WiFi.status() == WL_CONNECTED &&
+      !mqttClient.connected() &&
+      millis() - lastMqttRetryAt >= 10000) {
+    lastMqttRetryAt = millis();
     connectMqtt();
   }
 
-  mqttClient.loop();
+  if (mqttClient.connected()) {
+    mqttClient.loop();
+  }
 
-  if (millis() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
+  if (WiFi.status() == WL_CONNECTED && millis() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
     sendHeartbeat("online");
   }
 }

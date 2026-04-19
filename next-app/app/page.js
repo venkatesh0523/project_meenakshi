@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import DashboardAutoRefresh from "./DashboardAutoRefresh";
 import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
   listDevices,
@@ -53,6 +54,26 @@ function formatDeviceDate(value) {
   }
 
   return new Date(value).toLocaleString();
+}
+
+function getDeviceConnectionState(device) {
+  if (!device.last_seen_at) {
+    return {
+      label: "Offline",
+      lastActivity: "-",
+      isOnline: false
+    };
+  }
+
+  const lastSeen = new Date(device.last_seen_at);
+  const ageMs = Date.now() - lastSeen.getTime();
+  const isOnline = ageMs <= 60 * 1000;
+
+  return {
+    label: isOnline ? "Online" : "Offline",
+    lastActivity: formatDeviceDate(device.last_seen_at),
+    isOnline
+  };
 }
 
 async function requireUser() {
@@ -274,6 +295,7 @@ export default async function HomePage({ searchParams }) {
             </div>
           ) : (
             <>
+              <DashboardAutoRefresh />
               <div className="sectionHeader">
                 <div>
                   <p className="authKicker">Arduino Setup</p>
@@ -305,46 +327,52 @@ export default async function HomePage({ searchParams }) {
 
               {visibleDevices.length > 0 ? (
                 <div className="deviceConfigList">
-                  {visibleDevices.map((device) => (
-                    <article className="deviceConfigCard" key={device.device_id}>
-                      <div className="deviceConfigTop">
-                        <div>
-                          <p className="authKicker">Device</p>
-                          <strong>{device.board_model || "Arduino UNO R4 WiFi"}</strong>
-                        </div>
-                        <span className="chip">{device.last_seen_at ? "Online" : "-"}</span>
-                      </div>
+                  {visibleDevices.map((device) => {
+                    const connection = getDeviceConnectionState(device);
 
-                      <div className="deviceConfigRow">
-                        <span>Name</span>
-                        <strong>{device.device_name}</strong>
-                      </div>
-                      <div className="deviceConfigRow">
-                        <span>Network</span>
-                        <strong>{device.wifi_ssid || "-"}</strong>
-                      </div>
-                      <div className="deviceConfigRow">
-                        <span>Status</span>
-                        <strong>{device.last_status || "-"}</strong>
-                      </div>
-                      <div className="deviceConfigRow">
-                        <span>Last Activity</span>
-                        <strong>{formatDeviceDate(device.last_seen_at)}</strong>
-                      </div>
-                      <div className="deviceConfigRow">
-                        <span>ID</span>
-                        <code>{device.device_id}</code>
-                      </div>
-                      <div className="deviceConfigRow">
-                        <span>Serial Number</span>
-                        <code>{device.serial_number || "-"}</code>
-                      </div>
-                      <div className="deviceConfigRow">
-                        <span>Device Secret</span>
-                        <code>{device.device_secret || "-"}</code>
-                      </div>
-                    </article>
-                  ))}
+                    return (
+                      <article className="deviceConfigCard" key={device.device_id}>
+                        <div className="deviceConfigTop">
+                          <div>
+                            <p className="authKicker">Device</p>
+                            <strong>{device.board_model || "Arduino UNO R4 WiFi"}</strong>
+                          </div>
+                          <span className={`chip ${connection.isOnline ? "chipOnline" : "chipOffline"}`}>
+                            {connection.label}
+                          </span>
+                        </div>
+
+                        <div className="deviceConfigRow">
+                          <span>Name</span>
+                          <strong>{device.device_name}</strong>
+                        </div>
+                        <div className="deviceConfigRow">
+                          <span>Network</span>
+                          <strong>{device.wifi_ssid || "-"}</strong>
+                        </div>
+                        <div className="deviceConfigRow">
+                          <span>Status</span>
+                          <strong>{connection.label}</strong>
+                        </div>
+                        <div className="deviceConfigRow">
+                          <span>Last Activity</span>
+                          <strong>{connection.lastActivity}</strong>
+                        </div>
+                        <div className="deviceConfigRow">
+                          <span>ID</span>
+                          <code>{device.device_id}</code>
+                        </div>
+                        <div className="deviceConfigRow">
+                          <span>Serial Number</span>
+                          <code>{device.serial_number || "-"}</code>
+                        </div>
+                        <div className="deviceConfigRow">
+                          <span>Device Secret</span>
+                          <code>{device.device_secret || "-"}</code>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               ) : null}
             </>

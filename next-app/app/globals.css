@@ -430,6 +430,16 @@ a {
   font-weight: 700;
 }
 
+.chipOnline {
+  background: rgba(47, 107, 59, 0.12);
+  color: #1f4d28;
+}
+
+.chipOffline {
+  background: rgba(203, 124, 71, 0.12);
+  color: #8a3b16;
+}
+
 .statusBadge {
   display: grid;
   gap: 6px;
