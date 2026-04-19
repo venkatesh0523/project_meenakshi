@@ -3,7 +3,6 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
-  listKnownWifiNetworks,
   listDevices,
   provisionDeviceForUser,
   saveDeviceWifiConfiguration
@@ -216,12 +215,10 @@ export default async function HomePage({ searchParams }) {
   const authError = searchParams?.authError || "";
   const authView = searchParams?.authView || "login";
   const selectedDevice = searchParams?.selectedDevice || "";
-  const [devices, knownWifiNetworks] = user
-    ? await Promise.all([
-        listDevices(user.id),
-        listKnownWifiNetworks(user.id)
-      ])
-    : [[], []];
+  const devices = user ? await listDevices(user.id) : [];
+  const visibleDevices = selectedDevice
+    ? devices.filter((device) => device.device_id === selectedDevice)
+    : devices;
 
   return (
     <main className="page">
@@ -293,36 +290,35 @@ export default async function HomePage({ searchParams }) {
 
               <div className="historyCard connectDeviceCard">
                 <div>
-                  <p className="authKicker">Connect</p>
                   <strong>Connect Arduino</strong>
                 </div>
-                <p className="empty">
-                  Enter the Arduino device ID, scan Wi-Fi from the board over USB, enter the password, and connect.
-                </p>
 
                 <WifiSerialProvisioner
                   devices={devices.map((device) => ({
                     device_id: device.device_id,
                     device_name: device.device_name
                   }))}
-                  knownWifiNetworks={knownWifiNetworks}
                   selectedDevice={selectedDevice}
                   saveWifiAction={saveAndConnectArduinoDevice}
                 />
               </div>
 
-              {devices.length > 0 ? (
+              {visibleDevices.length > 0 ? (
                 <div className="deviceConfigList">
-                  {devices.map((device) => (
+                  {visibleDevices.map((device) => (
                     <article className="deviceConfigCard" key={device.device_id}>
                       <div className="deviceConfigTop">
                         <div>
-                          <p className="authKicker">{device.device_name}</p>
+                          <p className="authKicker">Device</p>
                           <strong>{device.board_model || "Arduino UNO R4 WiFi"}</strong>
                         </div>
                         <span className="chip">{device.last_seen_at ? "Online" : "-"}</span>
                       </div>
 
+                      <div className="deviceConfigRow">
+                        <span>Name</span>
+                        <strong>{device.device_name}</strong>
+                      </div>
                       <div className="deviceConfigRow">
                         <span>Network</span>
                         <strong>{device.wifi_ssid || "-"}</strong>
@@ -336,16 +332,8 @@ export default async function HomePage({ searchParams }) {
                         <strong>{formatDeviceDate(device.last_seen_at)}</strong>
                       </div>
                       <div className="deviceConfigRow">
-                        <span>Added</span>
-                        <strong>{formatDeviceDate(device.created_at)}</strong>
-                      </div>
-                      <div className="deviceConfigRow">
                         <span>ID</span>
                         <code>{device.device_id}</code>
-                      </div>
-                      <div className="deviceConfigRow">
-                        <span>FQBN</span>
-                        <code>{device.fqbn || "arduino:renesas_uno:unor4wifi"}</code>
                       </div>
                       <div className="deviceConfigRow">
                         <span>Serial Number</span>

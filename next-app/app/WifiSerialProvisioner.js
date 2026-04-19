@@ -1,15 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useFormStatus } from "react-dom";
-
-function parseSerialJson(line) {
-  try {
-    return JSON.parse(line);
-  } catch (error) {
-    return null;
-  }
-}
 
 function ConnectButton() {
   const { pending } = useFormStatus();
@@ -23,183 +15,18 @@ function ConnectButton() {
 
 export default function WifiSerialProvisioner({
   devices,
-  knownWifiNetworks,
   selectedDevice,
   saveWifiAction
 }) {
-  const [port, setPort] = useState(null);
-  const [networks, setNetworks] = useState([]);
   const [deviceId, setDeviceId] = useState(selectedDevice);
   const [manualWifi, setManualWifi] = useState("");
-  const [selectedWifi, setSelectedWifi] = useState("");
   const [wifiPassword, setWifiPassword] = useState("");
-  const [status, setStatus] = useState("");
-  const [isScanning, setIsScanning] = useState(false);
-  const [isSavingToBoard, setIsSavingToBoard] = useState(false);
-  const [serialSupported, setSerialSupported] = useState(false);
-  const [isSecureContext, setIsSecureContext] = useState(true);
-
-  useEffect(() => {
-    setSerialSupported("serial" in navigator);
-    setIsSecureContext(window.isSecureContext);
-  }, []);
-  const wifiChoices = useMemo(() => {
-    const choices = new Map();
-
-    knownWifiNetworks.forEach((ssid) => {
-      if (ssid) {
-        choices.set(ssid, { ssid, label: ssid, source: "saved" });
-      }
-    });
-
-    networks.forEach((network) => {
-      if (network.ssid) {
-        choices.set(network.ssid, {
-          ssid: network.ssid,
-          label: `${network.ssid} (${network.rssi} dBm${network.secure ? ", secure" : ", open"})`,
-          source: "scan"
-        });
-      }
-    });
-
-    return Array.from(choices.values());
-  }, [knownWifiNetworks, networks]);
-
-  async function getPort() {
-    if (port) {
-      return port;
-    }
-
-    if (!serialSupported) {
-      throw new Error("USB Serial is available in Chrome or Edge on desktop.");
-    }
-
-    const selectedPort = await navigator.serial.requestPort();
-    await selectedPort.open({ baudRate: 115200 });
-    setPort(selectedPort);
-    return selectedPort;
-  }
-
-  async function writeSerialLine(selectedPort, payload) {
-    const writer = selectedPort.writable.getWriter();
-    await writer.write(new TextEncoder().encode(`${JSON.stringify(payload)}\n`));
-    writer.releaseLock();
-  }
-
-  async function waitForSerialMessage(selectedPort, expectedType, timeoutMs = 12000) {
-    const reader = selectedPort.readable.getReader();
-    const decoder = new TextDecoder();
-    const deadline = Date.now() + timeoutMs;
-    let buffer = "";
-
-    try {
-      while (Date.now() < deadline) {
-        const readResult = await Promise.race([
-          reader.read(),
-          new Promise((resolve) => {
-            setTimeout(() => resolve({ timeout: true }), 350);
-          })
-        ]);
-
-        if (readResult.timeout) {
-          continue;
-        }
-
-        if (readResult.done) {
-          break;
-        }
-
-        buffer += decoder.decode(readResult.value, { stream: true });
-        const lines = buffer.split(/\r?\n/);
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          const message = parseSerialJson(line.trim());
-          if (message?.type === expectedType) {
-            return message;
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    throw new Error("The Arduino did not reply in time.");
-  }
-
-  async function scanWifi() {
-    setStatus("");
-    setIsScanning(true);
-
-    try {
-      const selectedPort = await getPort();
-      await writeSerialLine(selectedPort, { type: "scanWifi" });
-      const message = await waitForSerialMessage(selectedPort, "wifiNetworks");
-      setNetworks(message.networks || []);
-      setStatus("Wi-Fi scan complete. Choose a network below.");
-    } catch (error) {
-      setStatus(error.message || "Unable to scan Wi-Fi from the Arduino.");
-    } finally {
-      setIsScanning(false);
-    }
-  }
-
-  async function saveWifiToBoard() {
-    const ssid = manualWifi || selectedWifi;
-
-    if (!ssid || !wifiPassword) {
-      setStatus("Choose a Wi-Fi network and enter the password first.");
-      return;
-    }
-
-    setIsSavingToBoard(true);
-    setStatus("");
-
-    try {
-      const selectedPort = await getPort();
-      await writeSerialLine(selectedPort, {
-        type: "saveWifi",
-        ssid,
-        password: wifiPassword
-      });
-      const message = await waitForSerialMessage(selectedPort, "wifiSaved");
-      setStatus(message.message || "Wi-Fi sent to Arduino. Save it in the dashboard too.");
-    } catch (error) {
-      setStatus(error.message || "Unable to send Wi-Fi to the Arduino.");
-    } finally {
-      setIsSavingToBoard(false);
-    }
-  }
 
   return (
     <div className="serialProvisioner">
-      <div className="serialHeader">
-        <div>
-          <strong>Available Wi-Fi</strong>
-          <p className="empty">
-            USB scan is optional. You can also enter the Wi-Fi name manually below.
-          </p>
-        </div>
-        <button
-          className="button buttonGhost"
-          type="button"
-          onClick={scanWifi}
-          disabled={isScanning || !serialSupported}
-        >
-          {isScanning ? "Scanning..." : "Scan Wi-Fi"}
-        </button>
-      </div>
-
-      {!serialSupported ? (
-        <p className="banner bannerSuccess">
-          Manual Wi-Fi entry is ready. USB scan needs Chrome or Edge on desktop
-          {isSecureContext ? "." : " with HTTPS or localhost."}
-        </p>
-      ) : null}
-
       <form action={saveWifiAction} className="connectDeviceForm">
         <label className="fieldGroup">
-          <span className="fieldLabel">Arduino device ID</span>
+          <span className="fieldLabel">Device ID</span>
           <input
             className="input"
             name="deviceId"
@@ -218,58 +45,24 @@ export default function WifiSerialProvisioner({
           </datalist>
         </label>
         <label className="fieldGroup">
-          <span className="fieldLabel">Device name</span>
+          <span className="fieldLabel">Name</span>
           <input
             className="input"
             name="deviceName"
-            placeholder="Meenakshi"
+            defaultValue="Meenakshi"
           />
         </label>
         <input name="deviceType" type="hidden" value="arduino" />
-        <label className="fieldGroup">
-          <span className="fieldLabel">Board</span>
-          <input
-            className="input"
-            name="boardModel"
-            defaultValue="Arduino UNO R4 WiFi"
-            required
-          />
-        </label>
-        <label className="fieldGroup">
-          <span className="fieldLabel">FQBN</span>
-          <input
-            className="input"
-            name="fqbn"
-            defaultValue="arduino:renesas_uno:unor4wifi"
-            required
-          />
-        </label>
+        <input name="boardModel" type="hidden" value="Arduino UNO R4 WiFi" />
+        <input name="fqbn" type="hidden" value="arduino:renesas_uno:unor4wifi" />
+        <input name="location" type="hidden" value="Greenhouse Bay A" />
         <label className="fieldGroup">
           <span className="fieldLabel">Serial Number</span>
           <input
             className="input"
             name="serialNumber"
-            placeholder="E072A1E0B760"
+            defaultValue="E072A1E0B760"
           />
-        </label>
-        <label className="fieldGroup">
-          <span className="fieldLabel">Available Wi-Fi</span>
-          <select
-            className="input"
-            name="selectedWifi"
-            value={selectedWifi}
-            onChange={(event) => {
-              setSelectedWifi(event.target.value);
-              setManualWifi(event.target.value);
-            }}
-          >
-            <option value="">Select Wi-Fi network</option>
-            {wifiChoices.map((choice) => (
-              <option key={`${choice.source}-${choice.ssid}`} value={choice.ssid}>
-                {choice.label}
-              </option>
-            ))}
-          </select>
         </label>
         <label className="fieldGroup">
           <span className="fieldLabel">Wi-Fi name (SSID)</span>
@@ -278,10 +71,7 @@ export default function WifiSerialProvisioner({
             name="manualWifi"
             placeholder="Telia-B798AC"
             value={manualWifi}
-            onChange={(event) => {
-              setManualWifi(event.target.value);
-              setSelectedWifi("");
-            }}
+            onChange={(event) => setManualWifi(event.target.value)}
             required
           />
         </label>
@@ -297,31 +87,8 @@ export default function WifiSerialProvisioner({
             required
           />
         </label>
-        <label className="fieldGroup">
-          <span className="fieldLabel">Location</span>
-          <input
-            className="input"
-            name="location"
-            placeholder="Greenhouse Bay A"
-          />
-        </label>
-        <p className="fieldHint">
-          Enter the Wi-Fi name manually if USB scan is unavailable. Send Wi-Fi to Arduino writes the credentials to the board; Connect stores the Arduino Cloud-style configuration here.
-        </p>
-        {status ? <p className="fieldHint serialStatus">{status}</p> : null}
         <div className="connectDeviceActions">
-          <button
-            className="button buttonGhost"
-            type="button"
-            onClick={saveWifiToBoard}
-            disabled={isSavingToBoard || !serialSupported}
-          >
-            {isSavingToBoard ? "Sending..." : "Send Wi-Fi to Arduino"}
-          </button>
           <ConnectButton />
-          <a className="button buttonGhost buttonLink" href="/">
-            Cancel
-          </a>
         </div>
       </form>
     </div>
