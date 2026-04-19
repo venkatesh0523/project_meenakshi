@@ -3,10 +3,9 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
-  connectDeviceToUser,
-  createDevice,
   listKnownWifiNetworks,
   listDevices,
+  provisionDeviceForUser,
   saveDeviceWifiConfiguration
 } from "../lib/devices";
 import {
@@ -47,6 +46,14 @@ function getSessionCookieOptions(expiresAt) {
     expires: expiresAt,
     path: "/"
   };
+}
+
+function formatDeviceDate(value) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Date(value).toLocaleString();
 }
 
 async function requireUser() {
@@ -133,50 +140,17 @@ async function logoutUser() {
   redirect(buildRedirect("/", { authMessage: "Logged out." }));
 }
 
-async function registerDevice(formData) {
+async function saveAndConnectArduinoDevice(formData) {
   "use server";
 
   const user = await requireUser();
-
   const deviceId = normalizeField(formData.get("deviceId"));
-  const deviceName = normalizeField(formData.get("deviceName"));
+  const deviceName = normalizeField(formData.get("deviceName")) || deviceId;
   const deviceType = normalizeField(formData.get("deviceType")) || "arduino";
+  const boardModel = normalizeField(formData.get("boardModel")) || "Arduino UNO R4 WiFi";
+  const fqbn = normalizeField(formData.get("fqbn")) || "arduino:renesas_uno:unor4wifi";
+  const serialNumber = normalizeField(formData.get("serialNumber"));
   const location = normalizeField(formData.get("location"));
-
-  if (!deviceId || !deviceName) {
-    throw new Error("deviceId and deviceName are required");
-  }
-
-  try {
-    await createDevice({
-      deviceId,
-      deviceName,
-      deviceType,
-      location,
-      ownerUserId: user.id
-    });
-  } catch (error) {
-    redirect(
-      buildRedirect("/", {
-        authError: "Unable to register that device. The device ID may already exist."
-      })
-    );
-  }
-
-  revalidatePath("/");
-  redirect(
-    buildRedirect("/", {
-      authMessage: `Device ${deviceId} registered. Now save Wi-Fi for it.`,
-      selectedDevice: deviceId
-    })
-  );
-}
-
-async function saveWifiForDevice(formData) {
-  "use server";
-
-  const user = await requireUser();
-  const deviceId = normalizeField(formData.get("deviceId"));
   const selectedWifi = normalizeField(formData.get("selectedWifi"));
   const manualWifi = normalizeField(formData.get("manualWifi"));
   const wifiPassword = normalizeField(formData.get("wifiPassword"));
@@ -185,7 +159,27 @@ async function saveWifiForDevice(formData) {
   if (!deviceId || !wifiSsid || !wifiPassword) {
     redirect(
       buildRedirect("/", {
-        authError: "Choose a device, enter the Wi-Fi name, and enter the password.",
+        authError: "Enter the Arduino device ID, Wi-Fi name, and Wi-Fi password.",
+        selectedDevice: deviceId
+      })
+    );
+  }
+
+  const device = await provisionDeviceForUser({
+    deviceId,
+    deviceName,
+    deviceType,
+    boardModel,
+    fqbn,
+    serialNumber,
+    location,
+    userId: user.id
+  });
+
+  if (!device) {
+    redirect(
+      buildRedirect("/", {
+        authError: "That Arduino device is already connected to another account.",
         selectedDevice: deviceId
       })
     );
@@ -210,39 +204,7 @@ async function saveWifiForDevice(formData) {
   revalidatePath("/");
   redirect(
     buildRedirect("/", {
-      authMessage: `Wi-Fi saved for ${deviceId}. Connection status will update after the device reconnects.`,
-      selectedDevice: deviceId
-    })
-  );
-}
-
-async function connectArduinoDevice(formData) {
-  "use server";
-
-  const user = await requireUser();
-  const deviceId = normalizeField(formData.get("deviceId"));
-
-  if (!deviceId) {
-    redirect(buildRedirect("/", { authError: "Enter the Arduino device ID to connect it." }));
-  }
-
-  const connectedDevice = await connectDeviceToUser({
-    deviceId,
-    userId: user.id
-  });
-
-  if (!connectedDevice) {
-    redirect(
-      buildRedirect("/", {
-        authError: "That device was not found, or it already belongs to another user."
-      })
-    );
-  }
-
-  revalidatePath("/");
-  redirect(
-    buildRedirect("/", {
-      authMessage: `Arduino device ${deviceId} connected. Now save Wi-Fi for it.`,
+      authMessage: `Arduino ${deviceId} saved. The board will show connected after it reconnects.`,
       selectedDevice: deviceId
     })
   );
@@ -329,62 +291,70 @@ export default async function HomePage({ searchParams }) {
                 </div>
               </div>
 
-              <div className="authGrid">
-                <div className="historyCard">
-                  <strong>Connect Arduino Device</strong>
-                  <p className="empty">
-                    Enter the device ID from your Arduino sketch.
-                  </p>
-                  <form action={connectArduinoDevice} className="authForm">
-                    <input className="input" name="deviceId" placeholder="arduino-led-01" required />
-                    <button className="button buttonOff" type="submit">
-                      Connect Arduino
-                    </button>
-                  </form>
-                </div>
-
-                <div className="historyCard">
-                  <strong>Add New Arduino Device</strong>
-                  <p className="empty">
-                    Create a new board record, then connect it to Wi-Fi.
-                  </p>
-                  <form action={registerDevice} className="registerForm">
-                    <input className="input" name="deviceId" placeholder="arduino-led-02" required />
-                    <input className="input" name="deviceName" placeholder="Greenhouse LED" required />
-                    <input className="input" name="deviceType" placeholder="arduino" defaultValue="arduino" />
-                    <input className="input" name="location" placeholder="Greenhouse Bay A" />
-                    <button className="button buttonOn" type="submit">
-                      Add Device
-                    </button>
-                  </form>
-                </div>
-              </div>
-
               <div className="historyCard connectDeviceCard">
                 <div>
                   <p className="authKicker">Connect</p>
-                  <strong>Save Wi-Fi and Connect</strong>
+                  <strong>Connect Arduino</strong>
                 </div>
                 <p className="empty">
-                  Select an Arduino device, scan available Wi-Fi from the board over USB, enter the password, and connect.
+                  Enter the Arduino device ID, scan Wi-Fi from the board over USB, enter the password, and connect.
                 </p>
 
-                {devices.length === 0 ? (
-                  <p className="banner bannerError">
-                    Add or connect an Arduino device first.
-                  </p>
-                ) : (
-                  <WifiSerialProvisioner
-                    devices={devices.map((device) => ({
-                      device_id: device.device_id,
-                      device_name: device.device_name
-                    }))}
-                    knownWifiNetworks={knownWifiNetworks}
-                    selectedDevice={selectedDevice}
-                    saveWifiAction={saveWifiForDevice}
-                  />
-                )}
+                <WifiSerialProvisioner
+                  devices={devices.map((device) => ({
+                    device_id: device.device_id,
+                    device_name: device.device_name
+                  }))}
+                  knownWifiNetworks={knownWifiNetworks}
+                  selectedDevice={selectedDevice}
+                  saveWifiAction={saveAndConnectArduinoDevice}
+                />
               </div>
+
+              {devices.length > 0 ? (
+                <div className="deviceConfigList">
+                  {devices.map((device) => (
+                    <article className="deviceConfigCard" key={device.device_id}>
+                      <div className="deviceConfigTop">
+                        <div>
+                          <p className="authKicker">{device.device_name}</p>
+                          <strong>{device.board_model || "Arduino UNO R4 WiFi"}</strong>
+                        </div>
+                        <span className="chip">{device.last_seen_at ? "Online" : "-"}</span>
+                      </div>
+
+                      <div className="deviceConfigRow">
+                        <span>Network</span>
+                        <strong>{device.wifi_ssid || "-"}</strong>
+                      </div>
+                      <div className="deviceConfigRow">
+                        <span>Status</span>
+                        <strong>{device.last_status || "-"}</strong>
+                      </div>
+                      <div className="deviceConfigRow">
+                        <span>Last Activity</span>
+                        <strong>{formatDeviceDate(device.last_seen_at)}</strong>
+                      </div>
+                      <div className="deviceConfigRow">
+                        <span>Added</span>
+                        <strong>{formatDeviceDate(device.created_at)}</strong>
+                      </div>
+                      <div className="deviceConfigRow">
+                        <span>ID</span>
+                        <code>{device.device_id}</code>
+                      </div>
+                      <div className="deviceConfigRow">
+                        <span>FQBN</span>
+                        <code>{device.fqbn || "arduino:renesas_uno:unor4wifi"}</code>
+                      </div>
+                      <div className="deviceConfigRow">
+                        <span>Serial Number</span>
+                        <code>{device.serial_number || "-"}</code>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
             </>
           )}
         </section>

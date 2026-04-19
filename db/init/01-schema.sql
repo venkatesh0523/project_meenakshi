@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS devices (
   device_id VARCHAR(100) NOT NULL UNIQUE,
   device_name VARCHAR(150) NOT NULL,
   device_type VARCHAR(100) NOT NULL DEFAULT 'arduino',
+  board_model VARCHAR(150),
+  fqbn VARCHAR(200),
+  serial_number VARCHAR(150),
   location VARCHAR(150),
   wifi_ssid VARCHAR(150),
   wifi_password TEXT,
@@ -69,6 +72,15 @@ ADD COLUMN IF NOT EXISTS wifi_password TEXT;
 
 ALTER TABLE devices
 ADD COLUMN IF NOT EXISTS wifi_configured_at TIMESTAMPTZ;
+
+ALTER TABLE devices
+ADD COLUMN IF NOT EXISTS board_model VARCHAR(150);
+
+ALTER TABLE devices
+ADD COLUMN IF NOT EXISTS fqbn VARCHAR(200);
+
+ALTER TABLE devices
+ADD COLUMN IF NOT EXISTS serial_number VARCHAR(150);
 
 ALTER TABLE pending_user_registrations
 ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;

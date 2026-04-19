@@ -17,6 +17,15 @@ async function ensureDevicesSchema() {
 
       ALTER TABLE devices
       ADD COLUMN IF NOT EXISTS wifi_configured_at TIMESTAMPTZ;
+
+      ALTER TABLE devices
+      ADD COLUMN IF NOT EXISTS board_model VARCHAR(150);
+
+      ALTER TABLE devices
+      ADD COLUMN IF NOT EXISTS fqbn VARCHAR(200);
+
+      ALTER TABLE devices
+      ADD COLUMN IF NOT EXISTS serial_number VARCHAR(150);
     `);
   }
 
@@ -31,6 +40,9 @@ async function listDevices(userId) {
         device_id,
         device_name,
         device_type,
+        board_model,
+        fqbn,
+        serial_number,
         location,
         wifi_ssid,
         wifi_configured_at,
@@ -104,6 +116,61 @@ async function createDevice({
     `,
     [deviceId, deviceName, deviceType, location || null, deviceSecret, ownerUserId]
   );
+}
+
+async function provisionDeviceForUser({
+  deviceId,
+  deviceName,
+  deviceType,
+  boardModel,
+  fqbn,
+  serialNumber,
+  location,
+  userId
+}) {
+  await ensureDevicesSchema();
+  const result = await db.query(
+    `
+      INSERT INTO devices (
+        device_id,
+        device_name,
+        device_type,
+        board_model,
+        fqbn,
+        serial_number,
+        location,
+        device_secret,
+        owner_user_id
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ON CONFLICT (device_id) DO UPDATE
+      SET
+        owner_user_id = EXCLUDED.owner_user_id,
+        device_name = COALESCE(NULLIF(EXCLUDED.device_name, ''), devices.device_name),
+        device_type = COALESCE(NULLIF(EXCLUDED.device_type, ''), devices.device_type),
+        board_model = COALESCE(NULLIF(EXCLUDED.board_model, ''), devices.board_model),
+        fqbn = COALESCE(NULLIF(EXCLUDED.fqbn, ''), devices.fqbn),
+        serial_number = COALESCE(NULLIF(EXCLUDED.serial_number, ''), devices.serial_number),
+        location = COALESCE(NULLIF(EXCLUDED.location, ''), devices.location),
+        device_secret = COALESCE(devices.device_secret, EXCLUDED.device_secret)
+      WHERE devices.owner_user_id IS NULL
+        OR devices.owner_user_id = EXCLUDED.owner_user_id
+      RETURNING device_id, device_secret
+    `,
+    [
+      deviceId,
+      deviceName || deviceId,
+      deviceType || "arduino",
+      boardModel || "Arduino UNO R4 WiFi",
+      fqbn || "arduino:renesas_uno:unor4wifi",
+      serialNumber || null,
+      location || null,
+      generateDeviceSecret(),
+      userId
+    ]
+  );
+
+  return result.rows[0] || null;
 }
 
 async function connectDeviceToUser({ deviceId, userId }) {
@@ -196,6 +263,7 @@ module.exports = {
   listKnownWifiNetworks,
   listDevices,
   listRecentCommands,
+  provisionDeviceForUser,
   saveCommand,
   saveDeviceWifiConfiguration,
   updateDeviceHeartbeat

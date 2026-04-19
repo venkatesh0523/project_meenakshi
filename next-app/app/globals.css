@@ -268,6 +268,45 @@ a {
   color: var(--primary-dark);
 }
 
+.deviceConfigList {
+  display: grid;
+  gap: 14px;
+}
+
+.deviceConfigCard {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.deviceConfigTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.deviceConfigRow {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding-top: 10px;
+  border-top: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.deviceConfigRow span {
+  color: var(--muted);
+}
+
+.deviceConfigRow strong,
+.deviceConfigRow code {
+  word-break: break-word;
+}
+
 .setupGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -551,6 +590,10 @@ a {
   }
 
   .connectDeviceForm {
+    grid-template-columns: 1fr;
+  }
+
+  .deviceConfigRow {
     grid-template-columns: 1fr;
   }
 

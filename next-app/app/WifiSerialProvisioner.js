@@ -18,6 +18,7 @@ export default function WifiSerialProvisioner({
 }) {
   const [port, setPort] = useState(null);
   const [networks, setNetworks] = useState([]);
+  const [deviceId, setDeviceId] = useState(selectedDevice);
   const [manualWifi, setManualWifi] = useState("");
   const [selectedWifi, setSelectedWifi] = useState("");
   const [wifiPassword, setWifiPassword] = useState("");
@@ -161,7 +162,7 @@ export default function WifiSerialProvisioner({
     <div className="serialProvisioner">
       <div className="serialHeader">
         <div>
-          <strong>Available Wi-Fi From Arduino</strong>
+          <strong>Available Wi-Fi</strong>
           <p className="empty">
             Connect the board over USB, scan from the board, then save the same network in the dashboard.
           </p>
@@ -184,17 +185,58 @@ export default function WifiSerialProvisioner({
 
       <form action={saveWifiAction} className="connectDeviceForm">
         <label className="fieldGroup">
-          <span className="fieldLabel">Device</span>
-          <select className="input" name="deviceId" defaultValue={selectedDevice} required>
-            <option value="" disabled>
-              Select device
-            </option>
+          <span className="fieldLabel">Arduino device ID</span>
+          <input
+            className="input"
+            name="deviceId"
+            placeholder="a119c318-d7c7-41af-972d-5587e8506a43"
+            value={deviceId}
+            list="knownDeviceOptions"
+            onChange={(event) => setDeviceId(event.target.value)}
+            required
+          />
+          <datalist id="knownDeviceOptions">
             {devices.map((device) => (
               <option key={device.device_id} value={device.device_id}>
-                {device.device_name} ({device.device_id})
+                {device.device_name}
               </option>
             ))}
-          </select>
+          </datalist>
+        </label>
+        <label className="fieldGroup">
+          <span className="fieldLabel">Device name</span>
+          <input
+            className="input"
+            name="deviceName"
+            placeholder="Meenakshi"
+          />
+        </label>
+        <input name="deviceType" type="hidden" value="arduino" />
+        <label className="fieldGroup">
+          <span className="fieldLabel">Board</span>
+          <input
+            className="input"
+            name="boardModel"
+            defaultValue="Arduino UNO R4 WiFi"
+            required
+          />
+        </label>
+        <label className="fieldGroup">
+          <span className="fieldLabel">FQBN</span>
+          <input
+            className="input"
+            name="fqbn"
+            defaultValue="arduino:renesas_uno:unor4wifi"
+            required
+          />
+        </label>
+        <label className="fieldGroup">
+          <span className="fieldLabel">Serial Number</span>
+          <input
+            className="input"
+            name="serialNumber"
+            placeholder="E072A1E0B760"
+          />
         </label>
         <label className="fieldGroup">
           <span className="fieldLabel">Available Wi-Fi</span>
@@ -240,8 +282,16 @@ export default function WifiSerialProvisioner({
             required
           />
         </label>
+        <label className="fieldGroup">
+          <span className="fieldLabel">Location</span>
+          <input
+            className="input"
+            name="location"
+            placeholder="Greenhouse Bay A"
+          />
+        </label>
         <p className="fieldHint">
-          The scan runs on the Arduino board over USB. Save to Arduino writes the credentials to the board; Save Wi-Fi and Connect stores them in the dashboard.
+          The scan runs on the Arduino board over USB. Send Wi-Fi to Arduino writes the credentials to the board; Connect stores the Arduino Cloud-style configuration here.
         </p>
         {status ? <p className="fieldHint serialStatus">{status}</p> : null}
         <div className="connectDeviceActions">
@@ -251,10 +301,10 @@ export default function WifiSerialProvisioner({
             onClick={saveWifiToBoard}
             disabled={isSavingToBoard || !serialSupported}
           >
-            {isSavingToBoard ? "Sending..." : "Save to Arduino"}
+            {isSavingToBoard ? "Sending..." : "Send Wi-Fi to Arduino"}
           </button>
           <button className="button buttonOn" type="submit">
-            Save Wi-Fi and Connect
+            Connect
           </button>
           <a className="button buttonGhost buttonLink" href="/">
             Cancel
