@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS devices (
   device_secret VARCHAR(128),
   last_seen_at TIMESTAMPTZ,
   last_status VARCHAR(30),
+  led_state VARCHAR(10) NOT NULL DEFAULT 'OFF',
   owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -81,6 +82,9 @@ ADD COLUMN IF NOT EXISTS fqbn VARCHAR(200);
 
 ALTER TABLE devices
 ADD COLUMN IF NOT EXISTS serial_number VARCHAR(150);
+
+ALTER TABLE devices
+ADD COLUMN IF NOT EXISTS led_state VARCHAR(10) NOT NULL DEFAULT 'OFF';
 
 ALTER TABLE pending_user_registrations
 ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;

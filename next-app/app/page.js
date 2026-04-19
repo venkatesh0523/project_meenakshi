@@ -6,7 +6,8 @@ import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
   listDevices,
   provisionDeviceForUser,
-  saveDeviceWifiConfiguration
+  saveDeviceWifiConfiguration,
+  setDeviceLedState
 } from "../lib/devices";
 import {
   authenticateUser,
@@ -230,6 +231,36 @@ async function saveAndConnectArduinoDevice(formData) {
   );
 }
 
+async function toggleLedCommand(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const deviceId = normalizeField(formData.get("deviceId"));
+  const nextCommand = normalizeField(formData.get("nextCommand")).toUpperCase();
+
+  if (!deviceId || !["ON", "OFF"].includes(nextCommand)) {
+    redirect(buildRedirect("/", { authError: "Choose a valid LED command.", selectedDevice: deviceId }));
+  }
+
+  const updatedDevice = await setDeviceLedState({
+    deviceId,
+    userId: user.id,
+    command: nextCommand
+  });
+
+  if (!updatedDevice) {
+    redirect(buildRedirect("/", { authError: "That Arduino device is not connected to your account." }));
+  }
+
+  revalidatePath("/");
+  redirect(
+    buildRedirect("/", {
+      authMessage: `GPIO 13 LED command set to ${nextCommand}.`,
+      selectedDevice: deviceId
+    })
+  );
+}
+
 export default async function HomePage({ searchParams }) {
   const user = await getCurrentUser();
   const authMessage = searchParams?.authMessage || "";
@@ -369,6 +400,26 @@ export default async function HomePage({ searchParams }) {
                         <div className="deviceConfigRow">
                           <span>Device Secret</span>
                           <code>{device.device_secret || "-"}</code>
+                        </div>
+                        <div className="deviceConfigRow">
+                          <span>GPIO 13 LED</span>
+                          <strong>{device.led_state || "OFF"}</strong>
+                        </div>
+                        <div className="ledControl">
+                          <form action={toggleLedCommand}>
+                            <input type="hidden" name="deviceId" value={device.device_id} />
+                            <input
+                              type="hidden"
+                              name="nextCommand"
+                              value={(device.led_state || "OFF") === "ON" ? "OFF" : "ON"}
+                            />
+                            <button
+                              className={`button ${(device.led_state || "OFF") === "ON" ? "buttonOff" : "buttonOn"}`}
+                              type="submit"
+                            >
+                              {(device.led_state || "OFF") === "ON" ? "Turn LED Off" : "Turn LED On"}
+                            </button>
+                          </form>
                         </div>
                       </article>
                     );

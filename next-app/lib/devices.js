@@ -26,6 +26,9 @@ async function ensureDevicesSchema() {
 
       ALTER TABLE devices
       ADD COLUMN IF NOT EXISTS serial_number VARCHAR(150);
+
+      ALTER TABLE devices
+      ADD COLUMN IF NOT EXISTS led_state VARCHAR(10) NOT NULL DEFAULT 'OFF';
     `);
   }
 
@@ -49,6 +52,7 @@ async function listDevices(userId) {
         device_secret,
         last_seen_at,
         last_status,
+        led_state,
         created_at
       FROM devices
       WHERE owner_user_id = $1
@@ -238,6 +242,50 @@ async function saveCommand({ deviceId, command, source = "next-app" }) {
   );
 }
 
+async function setDeviceLedState({ deviceId, userId, command }) {
+  await ensureDevicesSchema();
+  const result = await db.query(
+    `
+      UPDATE devices
+      SET led_state = $3
+      WHERE device_id = $1
+        AND owner_user_id = $2
+      RETURNING device_id, led_state
+    `,
+    [deviceId, userId, command]
+  );
+
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  await saveCommand({
+    deviceId,
+    command,
+    source: "next-app"
+  });
+
+  return result.rows[0];
+}
+
+async function getDeviceCommandForHeartbeat({ deviceId, deviceSecret }) {
+  await ensureDevicesSchema();
+  const result = await db.query(
+    `
+      UPDATE devices
+      SET
+        last_seen_at = NOW(),
+        last_status = 'online'
+      WHERE device_id = $1
+        AND device_secret = $2
+      RETURNING device_id, led_state, last_seen_at, last_status
+    `,
+    [deviceId, deviceSecret]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function updateDeviceHeartbeat({ deviceId, deviceSecret, status = "online" }) {
   const result = await db.query(
     `
@@ -259,6 +307,7 @@ module.exports = {
   connectDeviceToUser,
   createDevice,
   generateDeviceSecret,
+  getDeviceCommandForHeartbeat,
   getDeviceForUser,
   listKnownWifiNetworks,
   listDevices,
@@ -266,5 +315,6 @@ module.exports = {
   provisionDeviceForUser,
   saveCommand,
   saveDeviceWifiConfiguration,
+  setDeviceLedState,
   updateDeviceHeartbeat
 };
