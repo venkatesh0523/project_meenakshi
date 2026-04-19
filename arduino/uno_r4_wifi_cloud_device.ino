@@ -3,8 +3,11 @@
 const char* WIFI_SSID = "Telia-B798AC";
 const char* WIFI_PASSWORD = "pnK7x6nhh222h2wx";
 
+// For Oracle Cloud, replace this with your public VM IP or domain.
+// Example: "129.154.12.34" or "my-domain.example"
 const char* CLOUD_HOST = "192.168.1.112";
 const int CLOUD_PORT = 3000;
+const bool CLOUD_USE_SSL = false;
 
 const char* DEVICE_ID = "a119c318-d7c7-41af-972d-5587e8506a43";
 const char* DEVICE_SECRET = "KBjocdSPoT5ET5rmC43P-hiw";
@@ -14,7 +17,7 @@ const int LED_PIN = 13;
 unsigned long lastCommandPollAt = 0;
 String currentLedState = "OFF";
 
-String readHttpResponse(WiFiClient& client) {
+String readHttpResponse(Client& client) {
   String response;
   const unsigned long startedAt = millis();
 
@@ -52,7 +55,9 @@ void pollLedCommand() {
     return;
   }
 
-  WiFiClient client;
+  WiFiClient plainClient;
+  WiFiSSLClient sslClient;
+  Client& client = CLOUD_USE_SSL ? static_cast<Client&>(sslClient) : static_cast<Client&>(plainClient);
 
   if (!client.connect(CLOUD_HOST, CLOUD_PORT)) {
     Serial.println("Command poll failed: could not connect to cloud");

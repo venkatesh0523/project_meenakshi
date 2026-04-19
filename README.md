@@ -29,6 +29,22 @@ For email OTP signup in the Next.js app, configure these environment variables f
 - `SMTP_PASS`
 - optional `EMAIL_FROM` if you want something other than `venkatesh.neerupudi@gmail.com`
 
+For Oracle Cloud, set the public dashboard URL before starting Docker. This is the URL the Arduino must call:
+
+```bash
+export PUBLIC_APP_URL="http://YOUR_ORACLE_PUBLIC_IP:3000"
+docker compose up -d --build
+```
+
+If you use a domain with HTTPS, use that instead:
+
+```bash
+export PUBLIC_APP_URL="https://your-domain.example"
+docker compose up -d --build
+```
+
+Also open the same port in the Oracle Cloud security list/network security group and on the VM firewall. If the Arduino sketch still contains a home network IP such as `192.168.1.112`, update `CLOUD_HOST` and `CLOUD_PORT` to match the Oracle address and upload the sketch again.
+
 Deployment flow:
 
 1. Push code to GitHub.
@@ -65,9 +81,10 @@ The dashboard lets you:
 - connect an existing Arduino device to your account
 - register a new Arduino device
 - copy the provisioned `DEVICE_ID` and `DEVICE_SECRET` into the Arduino sketch
-- see per-device connection status (`Connected` / `Disconnected`) from heartbeat updates
-- view each device's MQTT topics
-- turn a device on or off
+- see per-device connection status (`Online` / `Offline`) from heartbeat updates
+- copy the cloud command URL that the Arduino polls
+- turn GPIO 13 LED on or off
+- delete a device from your account
 - view recent command history from PostgreSQL
 
 ## C++ API

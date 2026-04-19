@@ -268,6 +268,21 @@ async function setDeviceLedState({ deviceId, userId, command }) {
   return result.rows[0];
 }
 
+async function deleteDeviceForUser({ deviceId, userId }) {
+  await ensureDevicesSchema();
+  const result = await db.query(
+    `
+      DELETE FROM devices
+      WHERE device_id = $1
+        AND owner_user_id = $2
+      RETURNING device_id
+    `,
+    [deviceId, userId]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function getDeviceCommandForHeartbeat({ deviceId, deviceSecret }) {
   await ensureDevicesSchema();
   const result = await db.query(
@@ -306,6 +321,7 @@ async function updateDeviceHeartbeat({ deviceId, deviceSecret, status = "online"
 module.exports = {
   connectDeviceToUser,
   createDevice,
+  deleteDeviceForUser,
   generateDeviceSecret,
   getDeviceCommandForHeartbeat,
   getDeviceForUser,

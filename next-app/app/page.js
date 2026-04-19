@@ -1,9 +1,10 @@
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import DashboardAutoRefresh from "./DashboardAutoRefresh";
 import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
+  deleteDeviceForUser,
   listDevices,
   provisionDeviceForUser,
   saveDeviceWifiConfiguration,
@@ -75,6 +76,26 @@ function getDeviceConnectionState(device) {
     lastActivity: formatDeviceDate(device.last_seen_at),
     isOnline
   };
+}
+
+function getRequestOrigin() {
+  if (process.env.PUBLIC_APP_URL) {
+    return process.env.PUBLIC_APP_URL.replace(/\/+$/, "");
+  }
+
+  const requestHeaders = headers();
+  const forwardedProto = requestHeaders.get("x-forwarded-proto");
+  const forwardedHost = requestHeaders.get("x-forwarded-host");
+  const host = forwardedHost || requestHeaders.get("host") || "localhost:3000";
+  const proto = forwardedProto || (host.includes("localhost") ? "http" : "https");
+
+  return `${proto}://${host}`;
+}
+
+function buildDeviceCommandUrl(origin, device) {
+  return `${origin}/api/devices/${encodeURIComponent(device.device_id)}/command?deviceSecret=${encodeURIComponent(
+    device.device_secret || ""
+  )}`;
 }
 
 async function requireUser() {
@@ -261,8 +282,36 @@ async function toggleLedCommand(formData) {
   );
 }
 
+async function deleteArduinoDevice(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const deviceId = normalizeField(formData.get("deviceId"));
+
+  if (!deviceId) {
+    redirect(buildRedirect("/", { authError: "Choose a device to delete." }));
+  }
+
+  const deletedDevice = await deleteDeviceForUser({
+    deviceId,
+    userId: user.id
+  });
+
+  if (!deletedDevice) {
+    redirect(buildRedirect("/", { authError: "That Arduino device is not connected to your account." }));
+  }
+
+  revalidatePath("/");
+  redirect(
+    buildRedirect("/", {
+      authMessage: `Arduino ${deviceId} deleted.`
+    })
+  );
+}
+
 export default async function HomePage({ searchParams }) {
   const user = await getCurrentUser();
+  const requestOrigin = getRequestOrigin();
   const authMessage = searchParams?.authMessage || "";
   const authError = searchParams?.authError || "";
   const authView = searchParams?.authView || "login";
@@ -402,10 +451,14 @@ export default async function HomePage({ searchParams }) {
                           <code>{device.device_secret || "-"}</code>
                         </div>
                         <div className="deviceConfigRow">
+                          <span>Cloud Command URL</span>
+                          <code>{buildDeviceCommandUrl(requestOrigin, device)}</code>
+                        </div>
+                        <div className="deviceConfigRow">
                           <span>GPIO 13 LED</span>
                           <strong>{device.led_state || "OFF"}</strong>
                         </div>
-                        <div className="ledControl">
+                        <div className="deviceActions">
                           <form action={toggleLedCommand}>
                             <input type="hidden" name="deviceId" value={device.device_id} />
                             <input
@@ -418,6 +471,12 @@ export default async function HomePage({ searchParams }) {
                               type="submit"
                             >
                               {(device.led_state || "OFF") === "ON" ? "Turn LED Off" : "Turn LED On"}
+                            </button>
+                          </form>
+                          <form action={deleteArduinoDevice}>
+                            <input type="hidden" name="deviceId" value={device.device_id} />
+                            <button className="button buttonDanger" type="submit">
+                              Delete Device
                             </button>
                           </form>
                         </div>

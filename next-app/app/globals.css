@@ -307,7 +307,8 @@ a {
   word-break: break-word;
 }
 
-.ledControl {
+.ledControl,
+.deviceActions {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
@@ -539,6 +540,11 @@ a {
   background: rgba(47, 107, 59, 0.08);
   color: var(--primary-dark);
   border: 1px solid rgba(47, 107, 59, 0.18);
+}
+
+.buttonDanger {
+  background: #8a2f24;
+  color: white;
 }
 
 .banner {
