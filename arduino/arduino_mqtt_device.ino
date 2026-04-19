@@ -1,9 +1,10 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <HTTPClient.h>
+#include <Preferences.h>
 
-const char* WIFI_SSID = "Telia-B798AC";
-const char* WIFI_PASSWORD = "pnK7x6nhh222h2wx";
+const char* DEFAULT_WIFI_SSID = "Telia-B798AC";
+const char* DEFAULT_WIFI_PASSWORD = "pnK7x6nhh222h2wx";
 
 const char* MQTT_HOST = "172.18.116.147";
 const int MQTT_PORT = 1883;
@@ -17,10 +18,170 @@ const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
+Preferences preferences;
 unsigned long lastHeartbeatAt = 0;
+unsigned long lastWifiRetryAt = 0;
+String serialBuffer;
+String activeWifiSsid;
+String activeWifiPassword;
 
 String commandTopic = String("farm1/") + DEVICE_ID + "/cmd";
 String statusTopic = String("farm1/") + DEVICE_ID + "/status";
+
+bool connectWifi();
+void connectMqtt();
+
+String escapeJson(const String& value) {
+  String escaped;
+
+  for (unsigned int index = 0; index < value.length(); index++) {
+    const char character = value[index];
+
+    if (character == '\\' || character == '"') {
+      escaped += '\\';
+    }
+
+    escaped += character;
+  }
+
+  return escaped;
+}
+
+String readJsonString(const String& payload, const String& key) {
+  const String marker = "\"" + key + "\"";
+  int markerIndex = payload.indexOf(marker);
+
+  if (markerIndex < 0) {
+    return "";
+  }
+
+  int colonIndex = payload.indexOf(':', markerIndex + marker.length());
+  if (colonIndex < 0) {
+    return "";
+  }
+
+  int valueStart = colonIndex + 1;
+  while (valueStart < static_cast<int>(payload.length()) && isspace(payload[valueStart])) {
+    valueStart++;
+  }
+
+  if (valueStart >= static_cast<int>(payload.length()) || payload[valueStart] != '"') {
+    return "";
+  }
+
+  valueStart++;
+  String value;
+  bool escaping = false;
+
+  for (int index = valueStart; index < static_cast<int>(payload.length()); index++) {
+    const char character = payload[index];
+
+    if (escaping) {
+      value += character;
+      escaping = false;
+      continue;
+    }
+
+    if (character == '\\') {
+      escaping = true;
+      continue;
+    }
+
+    if (character == '"') {
+      break;
+    }
+
+    value += character;
+  }
+
+  return value;
+}
+
+void loadWifiCredentials() {
+  preferences.begin("wifi", true);
+  activeWifiSsid = preferences.getString("ssid", DEFAULT_WIFI_SSID);
+  activeWifiPassword = preferences.getString("password", DEFAULT_WIFI_PASSWORD);
+  preferences.end();
+}
+
+void saveWifiCredentials(const String& ssid, const String& password) {
+  preferences.begin("wifi", false);
+  preferences.putString("ssid", ssid);
+  preferences.putString("password", password);
+  preferences.end();
+
+  activeWifiSsid = ssid;
+  activeWifiPassword = password;
+}
+
+void scanWifiNetworks() {
+  WiFi.mode(WIFI_STA);
+  const int networkCount = WiFi.scanNetworks();
+
+  Serial.print("{\"type\":\"wifiNetworks\",\"networks\":[");
+  for (int index = 0; index < networkCount; index++) {
+    if (index > 0) {
+      Serial.print(",");
+    }
+
+    Serial.print("{\"ssid\":\"");
+    Serial.print(escapeJson(WiFi.SSID(index)));
+    Serial.print("\",\"rssi\":");
+    Serial.print(WiFi.RSSI(index));
+    Serial.print(",\"secure\":");
+    Serial.print(WiFi.encryptionType(index) == WIFI_AUTH_OPEN ? "false" : "true");
+    Serial.print("}");
+  }
+  Serial.println("]}");
+
+  WiFi.scanDelete();
+}
+
+void handleSerialCommand(const String& command) {
+  if (command.indexOf("\"type\":\"scanWifi\"") >= 0) {
+    scanWifiNetworks();
+    return;
+  }
+
+  if (command.indexOf("\"type\":\"saveWifi\"") >= 0) {
+    const String ssid = readJsonString(command, "ssid");
+    const String password = readJsonString(command, "password");
+
+    if (ssid.length() == 0) {
+      Serial.println("{\"type\":\"wifiError\",\"message\":\"SSID is required\"}");
+      return;
+    }
+
+    saveWifiCredentials(ssid, password);
+    Serial.print("{\"type\":\"wifiSaved\",\"message\":\"Saved Wi-Fi ");
+    Serial.print(escapeJson(ssid));
+    Serial.println(". Reconnecting now.\"}");
+
+    mqttClient.disconnect();
+    WiFi.disconnect(true);
+    delay(500);
+
+    if (connectWifi()) {
+      connectMqtt();
+    }
+  }
+}
+
+void handleSerialInput() {
+  while (Serial.available() > 0) {
+    const char character = static_cast<char>(Serial.read());
+
+    if (character == '\n') {
+      serialBuffer.trim();
+      if (serialBuffer.length() > 0) {
+        handleSerialCommand(serialBuffer);
+      }
+      serialBuffer = "";
+    } else {
+      serialBuffer += character;
+    }
+  }
+}
 
 void sendHeartbeat(const char* status) {
   if (WiFi.status() != WL_CONNECTED) {
@@ -83,14 +244,28 @@ void onMessage(char* topic, byte* payload, unsigned int length) {
   }
 }
 
-void connectWifi() {
-  Serial.print("Connecting to WiFi SSID ");
-  Serial.println(WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+bool connectWifi() {
+  if (activeWifiSsid.length() == 0) {
+    Serial.println("No WiFi SSID saved");
+    return false;
+  }
 
-  while (WiFi.status() != WL_CONNECTED) {
+  Serial.print("Connecting to WiFi SSID ");
+  Serial.println(activeWifiSsid);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(activeWifiSsid.c_str(), activeWifiPassword.c_str());
+
+  const unsigned long startedAt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startedAt < 20000) {
+    handleSerialInput();
     delay(500);
     Serial.print(".");
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println();
+    Serial.println("WiFi connection timed out. Use USB scan/save to provision WiFi.");
+    return false;
   }
 
   Serial.println();
@@ -101,13 +276,19 @@ void connectWifi() {
   Serial.print(MQTT_HOST);
   Serial.print(":");
   Serial.println(MQTT_PORT);
+  return true;
 }
 
 void connectMqtt() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(onMessage);
 
   while (!mqttClient.connected()) {
+    handleSerialInput();
     Serial.print("Connecting to MQTT as ");
     Serial.println(DEVICE_ID);
     if (mqttClient.connect(DEVICE_ID, DEVICE_ID, DEVICE_SECRET)) {
@@ -132,18 +313,30 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("Booting Arduino device");
-  connectWifi();
-  connectMqtt();
+  loadWifiCredentials();
+
+  if (connectWifi()) {
+    connectMqtt();
+  }
 }
 
 void loop() {
-  if (!mqttClient.connected()) {
+  handleSerialInput();
+
+  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiRetryAt >= 10000) {
+    lastWifiRetryAt = millis();
+    connectWifi();
+  }
+
+  if (WiFi.status() == WL_CONNECTED && !mqttClient.connected()) {
     connectMqtt();
   }
 
-  mqttClient.loop();
+  if (mqttClient.connected()) {
+    mqttClient.loop();
+  }
 
-  if (millis() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
+  if (WiFi.status() == WL_CONNECTED && millis() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
     sendHeartbeat("online");
   }
 }

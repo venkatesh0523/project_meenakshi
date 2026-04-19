@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
   connectDeviceToUser,
   createDevice,
@@ -95,7 +96,12 @@ async function registerUser(formData) {
     );
   }
 
-  redirect(buildRedirect("/", { authMessage: "Account created. You can connect your Arduino now." }));
+  redirect(
+    buildRedirect("/", {
+      authMessage: "Account created. Connect your Arduino and save Wi-Fi now.",
+      deviceSetup: "wifi"
+    })
+  );
 }
 
 async function loginUser(formData) {
@@ -113,7 +119,12 @@ async function loginUser(formData) {
 
   cookies().set("session_token", session.sessionToken, getSessionCookieOptions(session.expiresAt));
 
-  redirect(buildRedirect("/", { authMessage: "Logged in. Connect your Arduino device below." }));
+  redirect(
+    buildRedirect("/", {
+      authMessage: "Logged in. Choose Wi-Fi and connect your Arduino device below.",
+      deviceSetup: "wifi"
+    })
+  );
 }
 
 async function logoutUser() {
@@ -452,71 +463,50 @@ export default async function HomePage({ searchParams }) {
 
               {deviceSetup === "wifi" ? (
                 <div className="historyCard connectDeviceCard">
-                  <strong>Connect Device</strong>
+                  <div>
+                    <p className="authKicker">Setup</p>
+                    <strong>Connect Arduino and Save Wi-Fi</strong>
+                  </div>
                   <p className="empty">
-                    Choose your device, pick one of the available saved Wi-Fi networks, or enter a new one, then save the password.
+                    First attach or register your Arduino device. Then choose an available saved Wi-Fi name or enter a new SSID and password for that device.
                   </p>
-                  <form action={saveWifiForDevice} className="connectDeviceForm">
-                    <label className="fieldGroup">
-                      <span className="fieldLabel">Device</span>
-                      <select className="input" name="deviceId" defaultValue={selectedDevice} required>
-                      <option value="" disabled>
-                        Select device
-                      </option>
-                      {devices.map((device) => (
-                        <option key={device.device_id} value={device.device_id}>
-                          {device.device_name} ({device.device_id})
-                        </option>
-                      ))}
-                      </select>
-                    </label>
-                    <label className="fieldGroup">
-                      <span className="fieldLabel">Saved Wi-Fi names</span>
-                      <select className="input" name="selectedWifi" defaultValue="">
-                      <option value="">Select saved Wi-Fi network</option>
-                      {knownWifiNetworks.map((ssid) => (
-                        <option key={ssid} value={ssid}>
-                          {ssid}
-                        </option>
-                      ))}
-                      </select>
-                    </label>
-                    <label className="fieldGroup">
-                      <span className="fieldLabel">Wi-Fi name (SSID)</span>
-                      <input
-                      className="input"
-                      name="manualWifi"
-                      placeholder="Enter Wi-Fi name"
-                      list="knownWifiOptions"
-                    />
-                    </label>
-                    <datalist id="knownWifiOptions">
-                      {knownWifiNetworks.map((ssid) => (
-                        <option key={ssid} value={ssid} />
-                      ))}
-                    </datalist>
-                    <label className="fieldGroup">
-                      <span className="fieldLabel">Wi-Fi password</span>
-                      <input
-                      className="input"
-                      name="wifiPassword"
-                      placeholder="Wi-Fi password"
-                      type="password"
-                      required
-                    />
-                    </label>
-                    <p className="fieldHint">
-                      The app can suggest previously saved Wi-Fi names, but it cannot detect or read Wi-Fi passwords. Enter the password manually.
-                    </p>
-                    <div className="connectDeviceActions">
-                      <button className="button buttonOn" type="submit">
-                        Save Wi-Fi
-                      </button>
-                      <a className="button buttonGhost buttonLink" href="/">
-                        Cancel
-                      </a>
+
+                  <div className="setupGrid">
+                    <div className="setupStep">
+                      <span className="stepNumber">1</span>
+                      <div>
+                        <strong>Connect Arduino</strong>
+                        <p className="empty">
+                          Use the device ID from your Arduino sketch, or register a new board below.
+                        </p>
+                      </div>
                     </div>
-                  </form>
+                    <div className="setupStep">
+                      <span className="stepNumber">2</span>
+                      <div>
+                        <strong>Save Wi-Fi</strong>
+                        <p className="empty">
+                          The selected network is saved to the device record. The dashboard shows connected after the Arduino sends a heartbeat.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {devices.length === 0 ? (
+                    <p className="banner bannerError">
+                      No Arduino devices are connected to this account yet. Connect an existing device or register a new one first.
+                    </p>
+                  ) : (
+                    <WifiSerialProvisioner
+                      devices={devices.map((device) => ({
+                        device_id: device.device_id,
+                        device_name: device.device_name
+                      }))}
+                      knownWifiNetworks={knownWifiNetworks}
+                      selectedDevice={selectedDevice}
+                      saveWifiAction={saveWifiForDevice}
+                    />
+                  )}
                 </div>
               ) : null}
 
