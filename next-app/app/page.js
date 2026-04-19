@@ -5,12 +5,9 @@ import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
   connectDeviceToUser,
   createDevice,
-  getDeviceForUser,
   listKnownWifiNetworks,
   listDevices,
-  listRecentCommands,
-  saveDeviceWifiConfiguration,
-  saveCommand
+  saveDeviceWifiConfiguration
 } from "../lib/devices";
 import {
   authenticateUser,
@@ -98,8 +95,7 @@ async function registerUser(formData) {
 
   redirect(
     buildRedirect("/", {
-      authMessage: "Account created. Connect your Arduino and save Wi-Fi now.",
-      deviceSetup: "wifi"
+      authMessage: "Account created. Connect your Arduino and save Wi-Fi now."
     })
   );
 }
@@ -121,8 +117,7 @@ async function loginUser(formData) {
 
   redirect(
     buildRedirect("/", {
-      authMessage: "Logged in. Choose Wi-Fi and connect your Arduino device below.",
-      deviceSetup: "wifi"
+      authMessage: "Logged in. Connect your Arduino device below."
     })
   );
 }
@@ -172,7 +167,6 @@ async function registerDevice(formData) {
   redirect(
     buildRedirect("/", {
       authMessage: `Device ${deviceId} registered. Now save Wi-Fi for it.`,
-      deviceSetup: "wifi",
       selectedDevice: deviceId
     })
   );
@@ -192,7 +186,6 @@ async function saveWifiForDevice(formData) {
     redirect(
       buildRedirect("/", {
         authError: "Choose a device, enter the Wi-Fi name, and enter the password.",
-        deviceSetup: "wifi",
         selectedDevice: deviceId
       })
     );
@@ -209,7 +202,6 @@ async function saveWifiForDevice(formData) {
     redirect(
       buildRedirect("/", {
         authError: "We could not save Wi-Fi settings for that device.",
-        deviceSetup: "wifi",
         selectedDevice: deviceId
       })
     );
@@ -219,7 +211,6 @@ async function saveWifiForDevice(formData) {
   redirect(
     buildRedirect("/", {
       authMessage: `Wi-Fi saved for ${deviceId}. Connection status will update after the device reconnects.`,
-      deviceSetup: "wifi",
       selectedDevice: deviceId
     })
   );
@@ -252,118 +243,9 @@ async function connectArduinoDevice(formData) {
   redirect(
     buildRedirect("/", {
       authMessage: `Arduino device ${deviceId} connected. Now save Wi-Fi for it.`,
-      deviceSetup: "wifi",
       selectedDevice: deviceId
     })
   );
-}
-
-async function sendDeviceCommand(formData) {
-  "use server";
-
-  const user = await requireUser();
-
-  const deviceId = normalizeField(formData.get("deviceId"));
-  const command = normalizeField(formData.get("command")).toUpperCase();
-
-  if (!deviceId || !["ON", "OFF"].includes(command)) {
-    throw new Error("Valid deviceId and command are required");
-  }
-
-  const device = await getDeviceForUser(deviceId, user.id);
-
-  if (!device) {
-    redirect(buildRedirect("/", { authError: "You can only control devices connected to your account." }));
-  }
-
-  const response = await fetch(
-    `http://cpp-api:8080/api/devices/${encodeURIComponent(deviceId)}/commands/${
-      command === "ON" ? "on" : "off"
-    }`,
-    {
-      method: "POST",
-      cache: "no-store"
-    }
-  );
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data.message || "Failed to send device command");
-  }
-
-  await saveCommand({
-    deviceId,
-    command
-  });
-
-  revalidatePath("/");
-  redirect(buildRedirect("/", { authMessage: `${deviceId} switched ${command}.` }));
-}
-
-function formatTopic(deviceId, suffix) {
-  return `farm1/${deviceId}/${suffix}`;
-}
-
-function maskSecret(secret) {
-  if (!secret) {
-    return "Not provisioned yet";
-  }
-
-  if (secret.length <= 8) {
-    return secret;
-  }
-
-  return `${secret.slice(0, 4)}...${secret.slice(-4)}`;
-}
-
-function getDeviceConnectionState(device) {
-  if (!device.last_seen_at) {
-    return {
-      isOnline: false,
-      label: "Disconnected",
-      subtitle: "No heartbeat received yet"
-    };
-  }
-
-  const lastSeen = new Date(device.last_seen_at);
-  const ageMs = Date.now() - lastSeen.getTime();
-  const isOnline = ageMs <= 90 * 1000;
-
-  return {
-    isOnline,
-    label: isOnline ? "Connected" : "Disconnected",
-    subtitle: `Last heartbeat: ${lastSeen.toLocaleString()}`
-  };
-}
-
-function getWifiProvisionState(device) {
-  if (!device.wifi_ssid) {
-    return {
-      label: "Wi-Fi not configured",
-      subtitle: "Open Connect Device to save network details",
-      tone: "statusOffline"
-    };
-  }
-
-  if (device.last_seen_at) {
-    const lastSeen = new Date(device.last_seen_at);
-    const ageMs = Date.now() - lastSeen.getTime();
-
-    if (ageMs <= 90 * 1000) {
-      return {
-        label: "Connected",
-        subtitle: `Connected to ${device.wifi_ssid}`,
-        tone: "statusOnline"
-      };
-    }
-  }
-
-  return {
-    label: "Waiting for device",
-    subtitle: `Saved network: ${device.wifi_ssid}`,
-    tone: "statusOffline"
-  };
 }
 
 export default async function HomePage({ searchParams }) {
@@ -371,28 +253,17 @@ export default async function HomePage({ searchParams }) {
   const authMessage = searchParams?.authMessage || "";
   const authError = searchParams?.authError || "";
   const authView = searchParams?.authView || "login";
-  const deviceSetup = searchParams?.deviceSetup || "";
   const selectedDevice = searchParams?.selectedDevice || "";
-  const [devices, commands, knownWifiNetworks] = user
+  const [devices, knownWifiNetworks] = user
     ? await Promise.all([
         listDevices(user.id),
-        listRecentCommands(user.id),
         listKnownWifiNetworks(user.id)
       ])
-    : [[], [], []];
-  const onlineCount = devices.filter((device) => getDeviceConnectionState(device).isOnline).length;
+    : [[], []];
 
   return (
     <main className="page">
       <div className="shell cloudShell">
-        {user ? (
-          <section className="panel hero">
-            <p className="eyebrow">Meenakshi Cloud</p>
-            <h1>Your device command center is live.</h1>
-            <p>Manage devices, MQTT credentials, and command history from one place.</p>
-          </section>
-        ) : null}
-
         <section className="panel stack">
           {authMessage ? <p className="banner bannerSuccess">{authMessage}</p> : null}
           {authError ? <p className="banner bannerError">{authError}</p> : null}
@@ -425,7 +296,7 @@ export default async function HomePage({ searchParams }) {
                       <p className="authKicker">Welcome Back</p>
                       <h2>Login</h2>
                       <p className="authCopy">
-                        Sign in to manage your Arduino devices, commands, and MQTT credentials.
+                        Sign in to connect your Arduino device.
                       </p>
                       <form action={loginUser} className="authForm">
                         <input className="input" name="email" placeholder="meenakshi@example.com" type="email" required />
@@ -445,14 +316,11 @@ export default async function HomePage({ searchParams }) {
           ) : (
             <>
               <div className="sectionHeader">
-                <strong>Welcome, {user.full_name}</strong>
+                <div>
+                  <p className="authKicker">Arduino Setup</p>
+                  <strong>Welcome, {user.full_name}</strong>
+                </div>
                 <div className="sectionActions">
-                  <a
-                    className="button buttonOff buttonLink"
-                    href={buildRedirect("/", { deviceSetup: "wifi" })}
-                  >
-                    Connect Device
-                  </a>
                   <form action={logoutUser}>
                     <button className="button buttonGhost" type="submit">
                       Logout
@@ -461,73 +329,24 @@ export default async function HomePage({ searchParams }) {
                 </div>
               </div>
 
-              {deviceSetup === "wifi" ? (
-                <div className="historyCard connectDeviceCard">
-                  <div>
-                    <p className="authKicker">Setup</p>
-                    <strong>Connect Arduino and Save Wi-Fi</strong>
-                  </div>
-                  <p className="empty">
-                    First attach or register your Arduino device. Then choose an available saved Wi-Fi name or enter a new SSID and password for that device.
-                  </p>
-
-                  <div className="setupGrid">
-                    <div className="setupStep">
-                      <span className="stepNumber">1</span>
-                      <div>
-                        <strong>Connect Arduino</strong>
-                        <p className="empty">
-                          Use the device ID from your Arduino sketch, or register a new board below.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="setupStep">
-                      <span className="stepNumber">2</span>
-                      <div>
-                        <strong>Save Wi-Fi</strong>
-                        <p className="empty">
-                          The selected network is saved to the device record. The dashboard shows connected after the Arduino sends a heartbeat.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {devices.length === 0 ? (
-                    <p className="banner bannerError">
-                      No Arduino devices are connected to this account yet. Connect an existing device or register a new one first.
-                    </p>
-                  ) : (
-                    <WifiSerialProvisioner
-                      devices={devices.map((device) => ({
-                        device_id: device.device_id,
-                        device_name: device.device_name
-                      }))}
-                      knownWifiNetworks={knownWifiNetworks}
-                      selectedDevice={selectedDevice}
-                      saveWifiAction={saveWifiForDevice}
-                    />
-                  )}
-                </div>
-              ) : null}
-
               <div className="authGrid">
                 <div className="historyCard">
-                  <strong>Connect Existing Arduino</strong>
+                  <strong>Connect Arduino Device</strong>
                   <p className="empty">
-                    Enter the same `DEVICE_ID` used in your Arduino sketch to attach that board to your account.
+                    Enter the device ID from your Arduino sketch.
                   </p>
                   <form action={connectArduinoDevice} className="authForm">
                     <input className="input" name="deviceId" placeholder="arduino-led-01" required />
                     <button className="button buttonOff" type="submit">
-                      Connect Device
+                      Connect Arduino
                     </button>
                   </form>
                 </div>
 
                 <div className="historyCard">
-                  <strong>Add Arduino Device</strong>
+                  <strong>Add New Arduino Device</strong>
                   <p className="empty">
-                    Create a new device record, then copy its MQTT topic into your Arduino sketch.
+                    Create a new board record, then connect it to Wi-Fi.
                   </p>
                   <form action={registerDevice} className="registerForm">
                     <input className="input" name="deviceId" placeholder="arduino-led-02" required />
@@ -535,147 +354,39 @@ export default async function HomePage({ searchParams }) {
                     <input className="input" name="deviceType" placeholder="arduino" defaultValue="arduino" />
                     <input className="input" name="location" placeholder="Greenhouse Bay A" />
                     <button className="button buttonOn" type="submit">
-                      Register Device
+                      Add Device
                     </button>
                   </form>
                 </div>
               </div>
+
+              <div className="historyCard connectDeviceCard">
+                <div>
+                  <p className="authKicker">Connect</p>
+                  <strong>Save Wi-Fi and Connect</strong>
+                </div>
+                <p className="empty">
+                  Select an Arduino device, scan available Wi-Fi from the board over USB, enter the password, and connect.
+                </p>
+
+                {devices.length === 0 ? (
+                  <p className="banner bannerError">
+                    Add or connect an Arduino device first.
+                  </p>
+                ) : (
+                  <WifiSerialProvisioner
+                    devices={devices.map((device) => ({
+                      device_id: device.device_id,
+                      device_name: device.device_name
+                    }))}
+                    knownWifiNetworks={knownWifiNetworks}
+                    selectedDevice={selectedDevice}
+                    saveWifiAction={saveWifiForDevice}
+                  />
+                )}
+              </div>
             </>
           )}
-        </section>
-
-        <section className="panel stack">
-          <div className="sectionHeader">
-            <strong>Your Devices</strong>
-            <span className="empty">
-              {user ? `${onlineCount}/${devices.length} online` : "Login required"}
-            </span>
-          </div>
-
-          {!user ? (
-            <div className="historyCard">
-              <p className="empty">
-                Register and login first to connect your Arduino device.
-              </p>
-            </div>
-          ) : devices.length === 0 ? (
-            <div className="historyCard">
-              <p className="empty">No devices connected yet.</p>
-            </div>
-          ) : (
-            <div className="deviceGrid">
-              {devices.map((device) => {
-                const connection = getDeviceConnectionState(device);
-                const wifiState = getWifiProvisionState(device);
-                return (
-                  <article key={device.device_id} className="deviceCard">
-                      <div className="deviceTop">
-                        <div>
-                          <p className="deviceLabel">{device.device_type}</p>
-                          <h2>{device.device_name}</h2>
-                        </div>
-                        <span className="chip">{device.device_id}</span>
-                      </div>
-                      <div
-                        className={`statusBadge ${
-                          connection.isOnline ? "statusOnline" : "statusOffline"
-                        }`}
-                      >
-                        <strong>{connection.label}</strong>
-                        <span>{connection.subtitle}</span>
-                      </div>
-
-                      <div className={`statusBadge ${wifiState.tone}`}>
-                        <strong>{wifiState.label}</strong>
-                        <span>{wifiState.subtitle}</span>
-                      </div>
-
-                      <p className="empty">
-                        {device.location || "No location set"}
-                      </p>
-
-                      <div className="topicList">
-                        <div className="topicItem">
-                          <strong>Command Topic</strong>
-                          <code>{formatTopic(device.device_id, "cmd")}</code>
-                        </div>
-                        <div className="topicItem">
-                          <strong>Status Topic</strong>
-                          <code>{formatTopic(device.device_id, "status")}</code>
-                        </div>
-                        <div className="topicItem">
-                          <strong>Wi-Fi Network</strong>
-                          <code>{device.wifi_ssid || "Not saved yet"}</code>
-                        </div>
-                        <div className="topicItem">
-                          <strong>MQTT Username</strong>
-                          <code>{device.device_id}</code>
-                        </div>
-                        <div className="topicItem">
-                          <strong>Device Secret</strong>
-                          <code>{device.device_secret}</code>
-                        </div>
-                        <div className="topicItem">
-                          <strong>Secret Preview</strong>
-                          <code>{maskSecret(device.device_secret)}</code>
-                        </div>
-                      </div>
-
-                      <div className="controlForm">
-                        <form action={sendDeviceCommand}>
-                          <input type="hidden" name="deviceId" value={device.device_id} />
-                          <input type="hidden" name="command" value="ON" />
-                          <button className="button buttonOn" type="submit">
-                            Turn On
-                          </button>
-                        </form>
-                        <form action={sendDeviceCommand}>
-                          <input type="hidden" name="deviceId" value={device.device_id} />
-                          <input type="hidden" name="command" value="OFF" />
-                          <button className="button buttonOff" type="submit">
-                            Turn Off
-                          </button>
-                        </form>
-                      </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        <section className="panel stack">
-          <div className="historyCard">
-            <strong>Recent Commands</strong>
-            {!user ? (
-              <p className="empty">Login to view command history for your devices.</p>
-            ) : commands.length === 0 ? (
-              <p className="empty">No commands have been sent yet.</p>
-            ) : (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Device</th>
-                    <th>Command</th>
-                    <th>Source</th>
-                    <th>Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {commands.map((command) => (
-                    <tr key={command.id}>
-                      <td>{command.id}</td>
-                      <td>{command.device_id}</td>
-                      <td>{command.command}</td>
-                      <td>{command.source}</td>
-                      <td>{new Date(command.created_at).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
         </section>
       </div>
     </main>
