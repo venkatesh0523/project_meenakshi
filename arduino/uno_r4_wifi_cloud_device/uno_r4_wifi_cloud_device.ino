@@ -5,12 +5,12 @@ const char* WIFI_PASSWORD = "pnK7x6nhh222h2wx";
 
 // For Oracle Cloud, replace this with your public VM IP or domain.
 // Example: "129.154.12.34" or "my-domain.example"
-const char* CLOUD_HOST = "192.168.1.112";
+const char* CLOUD_HOST = "141.148.239.103";
 const int CLOUD_PORT = 3000;
 const bool CLOUD_USE_SSL = false;
 
-const char* DEVICE_ID = "a119c318-d7c7-41af-972d-5587e8506a43";
-const char* DEVICE_SECRET = "KBjocdSPoT5ET5rmC43P-hiw";
+const char* DEVICE_ID = "a119c318-d7c7-41af-972d-5587e8506a41";
+const char* DEVICE_SECRET = "PVs5mxEQlVoYnB2GgfS--FtH";
 
 const int LED_PIN = 13;
 
