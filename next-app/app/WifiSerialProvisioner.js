@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useFormStatus } from "react-dom";
 
 function parseSerialJson(line) {
   try {
@@ -8,6 +9,16 @@ function parseSerialJson(line) {
   } catch (error) {
     return null;
   }
+}
+
+function ConnectButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <button className="button buttonOn" type="submit" disabled={pending}>
+      {pending ? "Connecting..." : "Connect"}
+    </button>
+  );
 }
 
 export default function WifiSerialProvisioner({
@@ -249,7 +260,7 @@ export default function WifiSerialProvisioner({
             value={selectedWifi}
             onChange={(event) => {
               setSelectedWifi(event.target.value);
-              setManualWifi("");
+              setManualWifi(event.target.value);
             }}
           >
             <option value="">Select Wi-Fi network</option>
@@ -261,16 +272,17 @@ export default function WifiSerialProvisioner({
           </select>
         </label>
         <label className="fieldGroup">
-          <span className="fieldLabel">New Wi-Fi name (SSID)</span>
+          <span className="fieldLabel">Wi-Fi name (SSID)</span>
           <input
             className="input"
             name="manualWifi"
-            placeholder="Enter Wi-Fi name"
+            placeholder="Telia-B798AC"
             value={manualWifi}
             onChange={(event) => {
               setManualWifi(event.target.value);
               setSelectedWifi("");
             }}
+            required
           />
         </label>
         <label className="fieldGroup">
@@ -306,9 +318,7 @@ export default function WifiSerialProvisioner({
           >
             {isSavingToBoard ? "Sending..." : "Send Wi-Fi to Arduino"}
           </button>
-          <button className="button buttonOn" type="submit">
-            Connect
-          </button>
+          <ConnectButton />
           <a className="button buttonGhost buttonLink" href="/">
             Cancel
           </a>
