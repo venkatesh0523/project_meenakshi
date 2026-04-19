@@ -10,7 +10,7 @@ const char* CLOUD_HOST = "192.168.1.112";
 const int CLOUD_PORT = 3000;
 
 const char* DEVICE_ID = "a119c318-d7c7-41af-972d-5587e8506a43";
-const char* DEVICE_SECRET = "Dz9rn31gDj8nA5mZ6vsGEfI5";
+const char* DEVICE_SECRET = "KBjocdSPoT5ET5rmC43P-hiw";
 
 const int LED_PIN = LED_BUILTIN;
 const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
