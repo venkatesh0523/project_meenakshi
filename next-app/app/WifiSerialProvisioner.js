@@ -26,9 +26,11 @@ export default function WifiSerialProvisioner({
   const [isScanning, setIsScanning] = useState(false);
   const [isSavingToBoard, setIsSavingToBoard] = useState(false);
   const [serialSupported, setSerialSupported] = useState(false);
+  const [isSecureContext, setIsSecureContext] = useState(true);
 
   useEffect(() => {
     setSerialSupported("serial" in navigator);
+    setIsSecureContext(window.isSecureContext);
   }, []);
   const wifiChoices = useMemo(() => {
     const choices = new Map();
@@ -164,7 +166,7 @@ export default function WifiSerialProvisioner({
         <div>
           <strong>Available Wi-Fi</strong>
           <p className="empty">
-            Connect the board over USB, scan from the board, then save the same network in the dashboard.
+            USB scan is optional. You can also enter the Wi-Fi name manually below.
           </p>
         </div>
         <button
@@ -178,8 +180,9 @@ export default function WifiSerialProvisioner({
       </div>
 
       {!serialSupported ? (
-        <p className="banner bannerError">
-          USB Serial needs Chrome or Edge on desktop.
+        <p className="banner bannerSuccess">
+          Manual Wi-Fi entry is ready. USB scan needs Chrome or Edge on desktop
+          {isSecureContext ? "." : " with HTTPS or localhost."}
         </p>
       ) : null}
 
@@ -291,7 +294,7 @@ export default function WifiSerialProvisioner({
           />
         </label>
         <p className="fieldHint">
-          The scan runs on the Arduino board over USB. Send Wi-Fi to Arduino writes the credentials to the board; Connect stores the Arduino Cloud-style configuration here.
+          Enter the Wi-Fi name manually if USB scan is unavailable. Send Wi-Fi to Arduino writes the credentials to the board; Connect stores the Arduino Cloud-style configuration here.
         </p>
         {status ? <p className="fieldHint serialStatus">{status}</p> : null}
         <div className="connectDeviceActions">
