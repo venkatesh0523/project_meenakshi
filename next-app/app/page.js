@@ -339,6 +339,10 @@ export default async function HomePage({ searchParams }) {
                         <span>Serial Number</span>
                         <code>{device.serial_number || "-"}</code>
                       </div>
+                      <div className="deviceConfigRow">
+                        <span>Device Secret</span>
+                        <code>{device.device_secret || "-"}</code>
+                      </div>
                     </article>
                   ))}
                 </div>
