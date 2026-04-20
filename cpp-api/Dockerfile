@@ -12,7 +12,8 @@ WORKDIR /usr/src/app
 COPY . .
 
 RUN cmake -S . -B build \
-  && cmake --build build --config Release
+  && cmake --build build --config Release \
+  && ctest --test-dir build --output-on-failure
 
 EXPOSE 8080
 

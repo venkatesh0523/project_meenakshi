@@ -34,3 +34,15 @@ curl http://localhost:8080/health
 curl -X POST http://localhost:8080/api/led/on
 curl -X POST http://localhost:8080/api/led/off
 ```
+
+## Tests
+
+Build and run the C++ unit tests with:
+
+```bash
+cmake -S cpp-api -B cpp-api/build
+cmake --build cpp-api/build
+ctest --test-dir cpp-api/build --output-on-failure
+```
+
+The unit tests cover request parsing, health response, default LED commands, device-specific LED commands, publish failures, and unknown routes.

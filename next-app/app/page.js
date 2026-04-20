@@ -5,6 +5,7 @@ import DashboardAutoRefresh from "./DashboardAutoRefresh";
 import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
   deleteDeviceForUser,
+  getDeviceForUser,
   listDevices,
   provisionDeviceForUser,
   saveDeviceWifiConfiguration,
@@ -92,10 +93,41 @@ function getRequestOrigin() {
   return `${proto}://${host}`;
 }
 
-function buildDeviceCommandUrl(origin, device) {
-  return `${origin}/api/devices/${encodeURIComponent(device.device_id)}/command?deviceSecret=${encodeURIComponent(
-    device.device_secret || ""
-  )}`;
+function buildDeviceHeartbeatUrl(origin, device) {
+  return `${origin}/api/devices/${encodeURIComponent(device.device_id)}/heartbeat`;
+}
+
+function buildMqttCommandTopic(device) {
+  return `farm1/${device.device_id}/cmd`;
+}
+
+function getCppApiUrl() {
+  return (process.env.CPP_API_URL || "http://localhost:8080").replace(/\/+$/, "");
+}
+
+async function publishLedCommandWithCppApi({ deviceId, command }) {
+  const commandPath = command === "ON" ? "on" : "off";
+  const response = await fetch(
+    `${getCppApiUrl()}/api/devices/${encodeURIComponent(deviceId)}/commands/${commandPath}`,
+    {
+      method: "POST",
+      cache: "no-store"
+    }
+  );
+
+  if (response.ok) {
+    return { ok: true };
+  }
+
+  let message = "C++ API could not publish the LED command.";
+  try {
+    const body = await response.json();
+    message = body?.message || message;
+  } catch (error) {
+    message = `${message} HTTP ${response.status}`;
+  }
+
+  return { ok: false, message };
 }
 
 async function requireUser() {
@@ -263,10 +295,31 @@ async function toggleLedCommand(formData) {
     redirect(buildRedirect("/", { authError: "Choose a valid LED command.", selectedDevice: deviceId }));
   }
 
+  const device = await getDeviceForUser(deviceId, user.id);
+
+  if (!device) {
+    redirect(buildRedirect("/", { authError: "That Arduino device is not connected to your account." }));
+  }
+
+  const published = await publishLedCommandWithCppApi({
+    deviceId,
+    command: nextCommand
+  });
+
+  if (!published.ok) {
+    redirect(
+      buildRedirect("/", {
+        authError: published.message,
+        selectedDevice: deviceId
+      })
+    );
+  }
+
   const updatedDevice = await setDeviceLedState({
     deviceId,
     userId: user.id,
-    command: nextCommand
+    command: nextCommand,
+    source: "cpp-api"
   });
 
   if (!updatedDevice) {
@@ -276,7 +329,7 @@ async function toggleLedCommand(formData) {
   revalidatePath("/");
   redirect(
     buildRedirect("/", {
-      authMessage: `GPIO 13 LED command set to ${nextCommand}.`,
+      authMessage: `GPIO 13 LED command sent through C++ API: ${nextCommand}.`,
       selectedDevice: deviceId
     })
   );
@@ -451,8 +504,12 @@ export default async function HomePage({ searchParams }) {
                           <code>{device.device_secret || "-"}</code>
                         </div>
                         <div className="deviceConfigRow">
-                          <span>Cloud Command URL</span>
-                          <code>{buildDeviceCommandUrl(requestOrigin, device)}</code>
+                          <span>Heartbeat URL</span>
+                          <code>{buildDeviceHeartbeatUrl(requestOrigin, device)}</code>
+                        </div>
+                        <div className="deviceConfigRow">
+                          <span>MQTT Command Topic</span>
+                          <code>{buildMqttCommandTopic(device)}</code>
                         </div>
                         <div className="deviceConfigRow">
                           <span>GPIO 13 LED</span>

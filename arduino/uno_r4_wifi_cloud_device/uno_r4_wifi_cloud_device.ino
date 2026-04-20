@@ -1,10 +1,14 @@
 #include <WiFiS3.h>
+#include <PubSubClient.h>
 
 const char* WIFI_SSID = "Telia-B798AC";
 const char* WIFI_PASSWORD = "pnK7x6nhh222h2wx";
 
-// For Oracle Cloud, replace this with your public VM IP or domain.
-// Example: "129.154.12.34" or "my-domain.example"
+// Oracle Cloud public IP/domain. The Arduino connects to MQTT here.
+const char* MQTT_HOST = "141.148.239.103";
+const int MQTT_PORT = 1883;
+
+// Next.js dashboard host. The Arduino still sends heartbeat here for Online/Offline.
 const char* CLOUD_HOST = "141.148.239.103";
 const int CLOUD_PORT = 3000;
 const bool CLOUD_USE_SSL = false;
@@ -13,9 +17,18 @@ const char* DEVICE_ID = "a119c318-d7c7-41af-972d-5587e8506a41";
 const char* DEVICE_SECRET = "PVs5mxEQlVoYnB2GgfS--FtH";
 
 const int LED_PIN = 13;
+const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
+const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
 
-unsigned long lastCommandPollAt = 0;
+WiFiClient mqttWifiClient;
+PubSubClient mqttClient(mqttWifiClient);
+
+unsigned long lastHeartbeatAt = 0;
+unsigned long lastMqttRetryAt = 0;
 String currentLedState = "OFF";
+
+String commandTopic = String("farm1/") + DEVICE_ID + "/cmd";
+String statusTopic = String("farm1/") + DEVICE_ID + "/status";
 
 String readHttpResponse(Client& client) {
   String response;
@@ -34,8 +47,21 @@ String readHttpResponse(Client& client) {
   return response;
 }
 
+void publishStatus(const char* status) {
+  if (!mqttClient.connected()) {
+    return;
+  }
+
+  const bool published = mqttClient.publish(statusTopic.c_str(), status, true);
+  Serial.print("Publishing status ");
+  Serial.print(status);
+  Serial.print(" -> ");
+  Serial.println(published ? "ok" : "failed");
+}
+
 void applyLedCommand(const String& command) {
   if (command == currentLedState) {
+    publishStatus(command.c_str());
     return;
   }
 
@@ -43,15 +69,34 @@ void applyLedCommand(const String& command) {
     digitalWrite(LED_PIN, HIGH);
     currentLedState = "ON";
     Serial.println("GPIO 13 LED ON");
+    publishStatus("ON");
   } else if (command == "OFF") {
     digitalWrite(LED_PIN, LOW);
     currentLedState = "OFF";
     Serial.println("GPIO 13 LED OFF");
+    publishStatus("OFF");
   }
 }
 
-void pollLedCommand() {
+void onMqttMessage(char* topic, byte* payload, unsigned int length) {
+  String message;
+
+  for (unsigned int index = 0; index < length; index++) {
+    message += static_cast<char>(payload[index]);
+  }
+
+  message.trim();
+  Serial.print("MQTT message on ");
+  Serial.print(topic);
+  Serial.print(": ");
+  Serial.println(message);
+
+  applyLedCommand(message);
+}
+
+void sendHeartbeat(const char* status) {
   if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Skipping heartbeat: WiFi is disconnected");
     return;
   }
 
@@ -60,28 +105,27 @@ void pollLedCommand() {
   Client& client = CLOUD_USE_SSL ? static_cast<Client&>(sslClient) : static_cast<Client&>(plainClient);
 
   if (!client.connect(CLOUD_HOST, CLOUD_PORT)) {
-    Serial.println("Command poll failed: could not connect to cloud");
+    Serial.println("Heartbeat failed: could not connect to cloud");
     return;
   }
 
-  const String path =
-      String("/api/devices/") + DEVICE_ID + "/command?deviceSecret=" + DEVICE_SECRET;
+  const String path = String("/api/devices/") + DEVICE_ID + "/heartbeat";
+  const String body =
+      String("{\"deviceSecret\":\"") + DEVICE_SECRET + "\",\"status\":\"" + status + "\"}";
 
-  client.print(String("GET ") + path + " HTTP/1.1\r\n");
+  client.print(String("POST ") + path + " HTTP/1.1\r\n");
   client.print(String("Host: ") + CLOUD_HOST + ":" + String(CLOUD_PORT) + "\r\n");
+  client.print("Content-Type: application/json\r\n");
+  client.print(String("Content-Length: ") + String(body.length()) + "\r\n");
   client.print("Connection: close\r\n\r\n");
+  client.print(body);
 
   const String response = readHttpResponse(client);
   client.stop();
 
-  if (response.indexOf("\"command\":\"ON\"") >= 0) {
-    applyLedCommand("ON");
-  } else if (response.indexOf("\"command\":\"OFF\"") >= 0) {
-    applyLedCommand("OFF");
-  } else {
-    Serial.println("Command poll did not return ON or OFF");
-    Serial.println(response);
-  }
+  Serial.println("Heartbeat response:");
+  Serial.println(response);
+  lastHeartbeatAt = millis();
 }
 
 bool connectWifi() {
@@ -109,16 +153,47 @@ bool connectWifi() {
   return true;
 }
 
+void connectMqtt() {
+  if (WiFi.status() != WL_CONNECTED || mqttClient.connected()) {
+    return;
+  }
+
+  if (millis() - lastMqttRetryAt < MQTT_RETRY_INTERVAL_MS) {
+    return;
+  }
+  lastMqttRetryAt = millis();
+
+  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+  mqttClient.setCallback(onMqttMessage);
+
+  Serial.print("Connecting to MQTT ");
+  Serial.print(MQTT_HOST);
+  Serial.print(":");
+  Serial.println(MQTT_PORT);
+
+  if (mqttClient.connect(DEVICE_ID, DEVICE_ID, DEVICE_SECRET)) {
+    Serial.println("MQTT connected");
+    mqttClient.subscribe(commandTopic.c_str());
+    Serial.print("Subscribed to ");
+    Serial.println(commandTopic);
+    publishStatus("READY");
+    sendHeartbeat("online");
+  } else {
+    Serial.print("MQTT connect failed, rc=");
+    Serial.println(mqttClient.state());
+  }
+}
+
 void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
   Serial.begin(115200);
   delay(1000);
-  Serial.println("Booting UNO R4 WiFi cloud device");
+  Serial.println("Booting UNO R4 WiFi MQTT cloud device");
 
   if (connectWifi()) {
-    pollLedCommand();
+    connectMqtt();
   }
 }
 
@@ -127,8 +202,15 @@ void loop() {
     connectWifi();
   }
 
-  if (WiFi.status() == WL_CONNECTED && millis() - lastCommandPollAt >= 3000) {
-    lastCommandPollAt = millis();
-    pollLedCommand();
+  if (WiFi.status() == WL_CONNECTED && !mqttClient.connected()) {
+    connectMqtt();
+  }
+
+  if (mqttClient.connected()) {
+    mqttClient.loop();
+  }
+
+  if (WiFi.status() == WL_CONNECTED && millis() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
+    sendHeartbeat("online");
   }
 }

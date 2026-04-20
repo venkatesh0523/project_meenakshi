@@ -12,6 +12,7 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://postgres:postgres@db:5432/farmdb
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
+      CPP_API_URL: http://cpp-api:8080
     ports:
       - "3000:3000"
     restart: unless-stopped

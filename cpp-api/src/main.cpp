@@ -4,15 +4,14 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "api_logic.h"
+
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <string_view>
-#include <sstream>
 #include <string>
-#include <vector>
 
 namespace {
 
@@ -77,60 +76,6 @@ bool publishLedCommand(
   return true;
 }
 
-std::vector<std::string> splitPath(const std::string& path) {
-  std::vector<std::string> parts;
-  std::size_t start = 0;
-
-  while (start < path.size()) {
-    while (start < path.size() && path[start] == '/') {
-      start += 1;
-    }
-
-    if (start >= path.size()) {
-      break;
-    }
-
-    const std::size_t end = path.find('/', start);
-    if (end == std::string::npos) {
-      parts.push_back(path.substr(start));
-      break;
-    }
-
-    parts.push_back(path.substr(start, end - start));
-    start = end + 1;
-  }
-
-  return parts;
-}
-
-std::string jsonEscape(const std::string& value) {
-  std::string escaped;
-  escaped.reserve(value.size());
-
-  for (char character : value) {
-    if (character == '\\' || character == '"') {
-      escaped.push_back('\\');
-    }
-
-    escaped.push_back(character);
-  }
-
-  return escaped;
-}
-
-std::string buildJsonResponse(
-    int statusCode,
-    const std::string& statusText,
-    const std::string& body) {
-  std::ostringstream response;
-  response << "HTTP/1.1 " << statusCode << ' ' << statusText << "\r\n";
-  response << "Content-Type: application/json\r\n";
-  response << "Content-Length: " << body.size() << "\r\n";
-  response << "Connection: close\r\n\r\n";
-  response << body;
-  return response.str();
-}
-
 void sendAll(int clientSocket, const std::string& response) {
   std::size_t totalSent = 0;
   while (totalSent < response.size()) {
@@ -141,29 +86,6 @@ void sendAll(int clientSocket, const std::string& response) {
     }
     totalSent += static_cast<std::size_t>(sent);
   }
-}
-
-std::string extractRequestTarget(const std::string& request) {
-  const std::size_t methodEnd = request.find(' ');
-  if (methodEnd == std::string::npos) {
-    return "";
-  }
-
-  const std::size_t targetEnd = request.find(' ', methodEnd + 1);
-  if (targetEnd == std::string::npos) {
-    return "";
-  }
-
-  return request.substr(methodEnd + 1, targetEnd - methodEnd - 1);
-}
-
-std::string extractRequestMethod(const std::string& request) {
-  const std::size_t methodEnd = request.find(' ');
-  if (methodEnd == std::string::npos) {
-    return "";
-  }
-
-  return request.substr(0, methodEnd);
 }
 
 }  // namespace
@@ -247,76 +169,14 @@ int main() {
 
     buffer[bytesRead] = '\0';
     const std::string request(buffer);
-    const std::string method = extractRequestMethod(request);
-    const std::string target = extractRequestTarget(request);
+    const std::string response = farm::handleHttpRequest(
+        request,
+        defaultDeviceId,
+        [&](const std::string& deviceId, const std::string& command, std::string& errorMessage) {
+          return publishLedCommand(mqttClient, host, mqttPort, deviceId, command, errorMessage);
+        });
 
-    if (method == "GET" && target == "/health") {
-      sendAll(clientSocket, buildJsonResponse(200, "OK", R"({"status":"ok","service":"cpp-api"})"));
-      close(clientSocket);
-      continue;
-    }
-
-    if (method == "POST" && (target == "/api/led/on" || target == "/api/led/off")) {
-      const std::string command = target == "/api/led/on" ? "ON" : "OFF";
-      std::string errorMessage;
-      const bool published =
-          publishLedCommand(mqttClient, host, mqttPort, defaultDeviceId, command, errorMessage);
-
-      if (!published) {
-        sendAll(
-            clientSocket,
-            buildJsonResponse(
-                500,
-                "Internal Server Error",
-                std::string("{\"message\":\"") + errorMessage + "\"}"));
-        close(clientSocket);
-        continue;
-      }
-
-      const std::string topic = "farm1/" + defaultDeviceId + "/cmd";
-      const std::string body =
-          std::string("{\"message\":\"LED command sent\",\"deviceId\":\"") +
-          jsonEscape(defaultDeviceId) + "\",\"command\":\"" + command +
-          "\",\"topic\":\"" + jsonEscape(topic) + "\"}";
-      sendAll(clientSocket, buildJsonResponse(200, "OK", body));
-      close(clientSocket);
-      continue;
-    }
-
-    const std::vector<std::string> pathParts = splitPath(target);
-    if (method == "POST" && pathParts.size() == 5 && pathParts[0] == "api" &&
-        pathParts[1] == "devices" && pathParts[3] == "commands" &&
-        (pathParts[4] == "on" || pathParts[4] == "off")) {
-      const std::string deviceId = pathParts[2];
-      const std::string command = pathParts[4] == "on" ? "ON" : "OFF";
-      std::string errorMessage;
-      const bool published =
-          publishLedCommand(mqttClient, host, mqttPort, deviceId, command, errorMessage);
-
-      if (!published) {
-        sendAll(
-            clientSocket,
-            buildJsonResponse(
-                500,
-                "Internal Server Error",
-                std::string("{\"message\":\"") + errorMessage + "\"}"));
-        close(clientSocket);
-        continue;
-      }
-
-      const std::string topic = "farm1/" + deviceId + "/cmd";
-      const std::string body =
-          std::string("{\"message\":\"Device command sent\",\"deviceId\":\"") +
-          jsonEscape(deviceId) + "\",\"command\":\"" + command + "\",\"topic\":\"" +
-          jsonEscape(topic) + "\"}";
-      sendAll(clientSocket, buildJsonResponse(200, "OK", body));
-      close(clientSocket);
-      continue;
-    }
-
-    sendAll(
-        clientSocket,
-        buildJsonResponse(404, "Not Found", R"({"message":"Route not found"})"));
+    sendAll(clientSocket, response);
     close(clientSocket);
   }
 

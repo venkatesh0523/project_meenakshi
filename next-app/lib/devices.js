@@ -242,7 +242,7 @@ async function saveCommand({ deviceId, command, source = "next-app" }) {
   );
 }
 
-async function setDeviceLedState({ deviceId, userId, command }) {
+async function setDeviceLedState({ deviceId, userId, command, source = "next-app" }) {
   await ensureDevicesSchema();
   const result = await db.query(
     `
@@ -262,7 +262,7 @@ async function setDeviceLedState({ deviceId, userId, command }) {
   await saveCommand({
     deviceId,
     command,
-    source: "next-app"
+    source
   });
 
   return result.rows[0];
