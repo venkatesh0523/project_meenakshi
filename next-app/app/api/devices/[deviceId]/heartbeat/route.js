@@ -37,9 +37,10 @@ export async function POST(request, { params }) {
   }
 
   return NextResponse.json({
-    message: "Heartbeat accepted",
+    message: heartbeat.secret_repaired ? "Heartbeat accepted and device secret updated" : "Heartbeat accepted",
     deviceId: heartbeat.device_id,
     lastSeenAt: heartbeat.last_seen_at,
-    status: heartbeat.last_status
+    status: heartbeat.last_status,
+    secretRepaired: heartbeat.secret_repaired
   });
 }

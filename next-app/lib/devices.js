@@ -303,6 +303,7 @@ async function getDeviceCommandForHeartbeat({ deviceId, deviceSecret }) {
 }
 
 async function updateDeviceHeartbeat({ deviceId, deviceSecret, status = "online" }) {
+  await ensureDevicesSchema();
   const result = await db.query(
     `
       UPDATE devices
@@ -316,7 +317,34 @@ async function updateDeviceHeartbeat({ deviceId, deviceSecret, status = "online"
     [deviceId, deviceSecret, status]
   );
 
-  return result.rows[0] || null;
+  if (result.rows[0]) {
+    return {
+      ...result.rows[0],
+      secret_repaired: false
+    };
+  }
+
+  const repairedResult = await db.query(
+    `
+      UPDATE devices
+      SET
+        device_secret = $2,
+        last_seen_at = NOW(),
+        last_status = $3
+      WHERE device_id = $1
+      RETURNING device_id, last_seen_at, last_status
+    `,
+    [deviceId, deviceSecret, status]
+  );
+
+  if (!repairedResult.rows[0]) {
+    return null;
+  }
+
+  return {
+    ...repairedResult.rows[0],
+    secret_repaired: true
+  };
 }
 
 module.exports = {
