@@ -231,10 +231,10 @@ async function saveAndConnectArduinoDevice(formData) {
   const wifiPassword = normalizeField(formData.get("wifiPassword"));
   const wifiSsid = manualWifi || selectedWifi;
 
-  if (!deviceId || !wifiSsid || !wifiPassword) {
+  if (!deviceId || !deviceSecret || !wifiSsid || !wifiPassword) {
     redirect(
       buildRedirect("/", {
-        authError: "Enter the Arduino device ID, Wi-Fi name, and Wi-Fi password.",
+        authError: "Enter the Arduino device ID, device secret, Wi-Fi name, and Wi-Fi password.",
         selectedDevice: deviceId
       })
     );
@@ -280,7 +280,7 @@ async function saveAndConnectArduinoDevice(formData) {
   revalidatePath("/");
   redirect(
     buildRedirect("/", {
-      authMessage: `Arduino ${deviceId} saved. The board will show connected after it reconnects.`,
+      authMessage: `Arduino ${deviceId} saved with matching secret. The board will show online after its next heartbeat.`,
       selectedDevice: deviceId
     })
   );

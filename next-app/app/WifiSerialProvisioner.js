@@ -64,6 +64,7 @@ export default function WifiSerialProvisioner({
             defaultValue="PVs5mxEQlVoYnB2GgfS--FtH"
             required
           />
+          <p className="fieldHint">Must match DEVICE_SECRET in the Arduino sketch.</p>
         </label>
         <label className="fieldGroup">
           <span className="fieldLabel">Serial Number</span>
