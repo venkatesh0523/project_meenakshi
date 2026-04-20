@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import DashboardAutoRefresh from "./DashboardAutoRefresh";
+import LedToggleButton from "./LedToggleButton";
 import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
   deleteDeviceForUser,
@@ -525,12 +526,7 @@ export default async function HomePage({ searchParams }) {
                               name="nextCommand"
                               value={(device.led_state || "OFF") === "ON" ? "OFF" : "ON"}
                             />
-                            <button
-                              className={`button ${(device.led_state || "OFF") === "ON" ? "buttonOff" : "buttonOn"}`}
-                              type="submit"
-                            >
-                              {(device.led_state || "OFF") === "ON" ? "Turn LED Off" : "Turn LED On"}
-                            </button>
+                            <LedToggleButton isOn={(device.led_state || "OFF") === "ON"} />
                           </form>
                           <form action={deleteArduinoDevice}>
                             <input type="hidden" name="deviceId" value={device.device_id} />
