@@ -292,9 +292,8 @@ async function toggleLedCommand(formData) {
 
   const user = await requireUser();
   const deviceId = normalizeField(formData.get("deviceId"));
-  const nextCommand = normalizeField(formData.get("nextCommand")).toUpperCase();
 
-  if (!deviceId || !["ON", "OFF"].includes(nextCommand)) {
+  if (!deviceId) {
     redirect(buildRedirect("/", { authError: "Choose a valid LED command.", selectedDevice: deviceId }));
   }
 
@@ -303,6 +302,8 @@ async function toggleLedCommand(formData) {
   if (!device) {
     redirect(buildRedirect("/", { authError: "That Arduino device is not connected to your account." }));
   }
+
+  const nextCommand = (device.led_state || "OFF") === "ON" ? "OFF" : "ON";
 
   const published = await publishLedCommandWithCppApi({
     deviceId,
@@ -521,11 +522,6 @@ export default async function HomePage({ searchParams }) {
                         <div className="deviceActions">
                           <form action={toggleLedCommand}>
                             <input type="hidden" name="deviceId" value={device.device_id} />
-                            <input
-                              type="hidden"
-                              name="nextCommand"
-                              value={(device.led_state || "OFF") === "ON" ? "OFF" : "ON"}
-                            />
                             <LedToggleButton isOn={(device.led_state || "OFF") === "ON"} />
                           </form>
                           <form action={deleteArduinoDevice}>

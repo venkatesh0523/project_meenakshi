@@ -199,7 +199,7 @@ async function getDeviceForUser(deviceId, userId) {
   await ensureDevicesSchema();
   const result = await db.query(
     `
-      SELECT device_id, device_name, wifi_ssid, last_seen_at, last_status
+      SELECT device_id, device_name, wifi_ssid, last_seen_at, last_status, led_state
       FROM devices
       WHERE device_id = $1 AND owner_user_id = $2
     `,
