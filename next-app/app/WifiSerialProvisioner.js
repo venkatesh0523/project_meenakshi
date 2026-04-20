@@ -57,6 +57,15 @@ export default function WifiSerialProvisioner({
         <input name="fqbn" type="hidden" value="arduino:renesas_uno:unor4wifi" />
         <input name="location" type="hidden" value="Greenhouse Bay A" />
         <label className="fieldGroup">
+          <span className="fieldLabel">Device Secret</span>
+          <input
+            className="input"
+            name="deviceSecret"
+            defaultValue="PVs5mxEQlVoYnB2GgfS--FtH"
+            required
+          />
+        </label>
+        <label className="fieldGroup">
           <span className="fieldLabel">Serial Number</span>
           <input
             className="input"

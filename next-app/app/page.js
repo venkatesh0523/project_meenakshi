@@ -221,6 +221,7 @@ async function saveAndConnectArduinoDevice(formData) {
   const deviceId = normalizeField(formData.get("deviceId"));
   const deviceName = normalizeField(formData.get("deviceName")) || deviceId;
   const deviceType = normalizeField(formData.get("deviceType")) || "arduino";
+  const deviceSecret = normalizeField(formData.get("deviceSecret"));
   const boardModel = normalizeField(formData.get("boardModel")) || "Arduino UNO R4 WiFi";
   const fqbn = normalizeField(formData.get("fqbn")) || "arduino:renesas_uno:unor4wifi";
   const serialNumber = normalizeField(formData.get("serialNumber"));
@@ -243,6 +244,7 @@ async function saveAndConnectArduinoDevice(formData) {
     deviceId,
     deviceName,
     deviceType,
+    deviceSecret,
     boardModel,
     fqbn,
     serialNumber,

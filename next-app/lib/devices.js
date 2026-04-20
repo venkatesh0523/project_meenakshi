@@ -126,6 +126,7 @@ async function provisionDeviceForUser({
   deviceId,
   deviceName,
   deviceType,
+  deviceSecret,
   boardModel,
   fqbn,
   serialNumber,
@@ -156,7 +157,7 @@ async function provisionDeviceForUser({
         fqbn = COALESCE(NULLIF(EXCLUDED.fqbn, ''), devices.fqbn),
         serial_number = COALESCE(NULLIF(EXCLUDED.serial_number, ''), devices.serial_number),
         location = COALESCE(NULLIF(EXCLUDED.location, ''), devices.location),
-        device_secret = COALESCE(devices.device_secret, EXCLUDED.device_secret)
+        device_secret = COALESCE(NULLIF(EXCLUDED.device_secret, ''), devices.device_secret)
       WHERE devices.owner_user_id IS NULL
         OR devices.owner_user_id = EXCLUDED.owner_user_id
       RETURNING device_id, device_secret
@@ -169,7 +170,7 @@ async function provisionDeviceForUser({
       fqbn || "arduino:renesas_uno:unor4wifi",
       serialNumber || null,
       location || null,
-      generateDeviceSecret(),
+      deviceSecret || generateDeviceSecret(),
       userId
     ]
   );
