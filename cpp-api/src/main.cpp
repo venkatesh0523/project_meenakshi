@@ -63,7 +63,7 @@ bool publishLedCommand(
       static_cast<int>(command.size()),
       command.c_str(),
       1,
-      false);
+      true);
 
   if (publishResult != MOSQ_ERR_SUCCESS) {
     errorMessage = "Failed to publish MQTT message";
