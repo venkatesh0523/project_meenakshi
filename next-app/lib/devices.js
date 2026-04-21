@@ -86,31 +86,31 @@ async function listDevices(userId) {
   const result = await db.query(
     `
       SELECT
-        device_id,
-        device_name,
-        device_type,
-        board_model,
-        fqbn,
-        serial_number,
-        location,
-        wifi_ssid,
-        wifi_configured_at,
-        device_secret,
-        last_seen_at,
-        last_status,
-        led_state,
+        devices.device_id,
+        devices.device_name,
+        devices.device_type,
+        devices.board_model,
+        devices.fqbn,
+        devices.serial_number,
+        devices.location,
+        devices.wifi_ssid,
+        devices.wifi_configured_at,
+        devices.device_secret,
+        devices.last_seen_at,
+        devices.last_status,
+        devices.led_state,
         COALESCE(things.variables, devices.thing_variables, '[]'::jsonb) AS thing_variables,
         things.thing_name,
         things.device_sketch,
         things.created_at AS thing_created_at,
         things.updated_at AS thing_updated_at,
-        created_at
+        devices.created_at
       FROM devices
       LEFT JOIN things
         ON things.device_id = devices.device_id
        AND things.owner_user_id = devices.owner_user_id
-      WHERE owner_user_id = $1
-      ORDER BY created_at ASC
+      WHERE devices.owner_user_id = $1
+      ORDER BY devices.created_at ASC
     `,
     [userId]
   );
@@ -279,7 +279,8 @@ async function getDeviceForUser(deviceId, userId) {
       LEFT JOIN things
         ON things.device_id = devices.device_id
        AND things.owner_user_id = devices.owner_user_id
-      WHERE device_id = $1 AND owner_user_id = $2
+      WHERE devices.device_id = $1
+        AND devices.owner_user_id = $2
     `,
     [deviceId, userId]
   );
