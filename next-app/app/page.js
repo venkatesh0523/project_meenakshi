@@ -7,9 +7,12 @@ import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
   addThingVariableForUser,
   deleteDeviceForUser,
+  deleteThingForUser,
+  duplicateThingForUser,
   getDeviceForUser,
   listDevices,
   provisionDeviceForUser,
+  renameThingForUser,
   saveDeviceWifiConfiguration,
   setDeviceLedState
 } from "../lib/devices";
@@ -436,6 +439,83 @@ async function addThingVariable(formData) {
   );
 }
 
+async function renameThing(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const deviceId = normalizeField(formData.get("deviceId"));
+  const thingName = normalizeField(formData.get("thingName"));
+
+  if (!deviceId || !thingName) {
+    redirect(buildRedirect("/", { builder: "things", authError: "Enter a thing name.", selectedDevice: deviceId }));
+  }
+
+  const renamed = await renameThingForUser({
+    deviceId,
+    userId: user.id,
+    thingName
+  });
+
+  if (!renamed) {
+    redirect(buildRedirect("/", { builder: "things", authError: "Thing not found.", selectedDevice: deviceId }));
+  }
+
+  revalidatePath("/");
+  redirect(buildRedirect("/", { builder: "things", authMessage: `Thing renamed to ${thingName}.`, selectedDevice: deviceId }));
+}
+
+async function duplicateThing(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const deviceId = normalizeField(formData.get("deviceId"));
+
+  if (!deviceId) {
+    redirect(buildRedirect("/", { builder: "things", authError: "Thing not found." }));
+  }
+
+  const duplicate = await duplicateThingForUser({
+    deviceId,
+    userId: user.id
+  });
+
+  if (!duplicate) {
+    redirect(buildRedirect("/", { builder: "things", authError: "Unable to duplicate thing.", selectedDevice: deviceId }));
+  }
+
+  revalidatePath("/");
+  redirect(
+    buildRedirect("/", {
+      builder: "things",
+      authMessage: `Thing duplicated as ${duplicate.thing_name}.`,
+      selectedDevice: duplicate.device_id
+    })
+  );
+}
+
+async function deleteThing(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const deviceId = normalizeField(formData.get("deviceId"));
+
+  if (!deviceId) {
+    redirect(buildRedirect("/", { builder: "things", authError: "Thing not found." }));
+  }
+
+  const deleted = await deleteThingForUser({
+    deviceId,
+    userId: user.id
+  });
+
+  if (!deleted) {
+    redirect(buildRedirect("/", { builder: "things", authError: "Unable to delete thing.", selectedDevice: deviceId }));
+  }
+
+  revalidatePath("/");
+  redirect(buildRedirect("/", { builder: "things", authMessage: `Thing deleted.` }));
+}
+
 export default async function HomePage({ searchParams }) {
   const user = await getCurrentUser();
   const requestOrigin = getRequestOrigin();
@@ -561,33 +641,80 @@ export default async function HomePage({ searchParams }) {
                       </div>
 
                       {thingItems.length > 0 ? (
-                        <div className="builderGrid">
+                        <div className="thingsList">
                           {thingItems.map((thing) => {
                             const connection = getDeviceConnectionState(thing);
 
                             return (
-                              <article className="builderCard" key={thing.device_id}>
-                                <div className="builderCardTop">
+                              <article className="thingCard" key={thing.device_id}>
+                                <div className="thingHeader">
                                   <div>
                                     <p className="authKicker">Thing</p>
-                                    <strong>{thing.thingName}</strong>
+                                    <strong>{thing.thing_name || thing.thingName}</strong>
                                   </div>
                                   <span className={`chip ${connection.isOnline ? "chipOnline" : "chipOffline"}`}>
                                     {connection.label}
                                   </span>
                                 </div>
+                                <div className="thingMetaGrid">
+                                  <div className="thingMetaRow">
+                                    <span>Thing Name</span>
+                                    <strong>{thing.thing_name || thing.thingName}</strong>
+                                  </div>
+                                  <div className="thingMetaRow">
+                                    <span>Device Sketch</span>
+                                    <code>{thing.device_sketch || "uno_r4_wifi_cloud_device"}</code>
+                                  </div>
+                                  <div className="thingMetaRow">
+                                    <span>Last Modified</span>
+                                    <strong>{formatDeviceDate(thing.thing_updated_at || thing.created_at)}</strong>
+                                  </div>
+                                  <div className="thingMetaRow">
+                                    <span>Created</span>
+                                    <strong>{formatDeviceDate(thing.thing_created_at || thing.created_at)}</strong>
+                                  </div>
+                                </div>
+                                <details className="thingMenu">
+                                  <summary className="thingMenuButton">...</summary>
+                                  <div className="thingMenuPanel">
+                                    <form action={renameThing} className="thingActionForm">
+                                      <input type="hidden" name="deviceId" value={thing.device_id} />
+                                      <input
+                                        className="input"
+                                        name="thingName"
+                                        defaultValue={thing.thing_name || thing.thingName}
+                                        required
+                                      />
+                                      <button className="button buttonGhost" type="submit">
+                                        Rename
+                                      </button>
+                                    </form>
+                                    <form action={duplicateThing}>
+                                      <input type="hidden" name="deviceId" value={thing.device_id} />
+                                      <button className="button buttonGhost" type="submit">
+                                        Duplicate
+                                      </button>
+                                    </form>
+                                    <form action={deleteThing}>
+                                      <input type="hidden" name="deviceId" value={thing.device_id} />
+                                      <button className="button buttonDanger" type="submit">
+                                        Delete
+                                      </button>
+                                    </form>
+                                  </div>
+                                </details>
                                 <p className="builderCardCopy">{thing.device_name} groups variables, live connection status, and future automations.</p>
-                                {thing.variables.length > 0 ? (
-                                  <div className="builderPillRow">
-                                    {thing.variables.map((item) => (
+                                <div className="builderPillRow">
+                                  {thing.variables.length > 0 ? (
+                                    thing.variables.map((item) => (
                                       <span className="builderMiniPill" key={item.name}>
                                         {item.name} · {item.type}
                                       </span>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="sectionCopy">No variables yet.</p>
-                                )}
+                                    ))
+                                  ) : (
+                                    <span className="builderMiniPill">No variables</span>
+                                  )}
+                                </div>
                                 <form action={addThingVariable} className="thingVariableForm">
                                   <input type="hidden" name="deviceId" value={thing.device_id} />
                                   <input className="input" name="variableName" placeholder="ledState" required />
