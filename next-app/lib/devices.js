@@ -29,6 +29,9 @@ async function ensureDevicesSchema() {
 
       ALTER TABLE devices
       ADD COLUMN IF NOT EXISTS led_state VARCHAR(10) NOT NULL DEFAULT 'OFF';
+
+      ALTER TABLE devices
+      ADD COLUMN IF NOT EXISTS thing_variables JSONB NOT NULL DEFAULT '[]'::jsonb;
     `);
   }
 
@@ -53,6 +56,7 @@ async function listDevices(userId) {
         last_seen_at,
         last_status,
         led_state,
+        thing_variables,
         created_at
       FROM devices
       WHERE owner_user_id = $1
@@ -199,7 +203,7 @@ async function getDeviceForUser(deviceId, userId) {
   await ensureDevicesSchema();
   const result = await db.query(
     `
-      SELECT device_id, device_name, wifi_ssid, last_seen_at, last_status, led_state
+      SELECT device_id, device_name, wifi_ssid, last_seen_at, last_status, led_state, thing_variables
       FROM devices
       WHERE device_id = $1 AND owner_user_id = $2
     `,
@@ -267,6 +271,65 @@ async function setDeviceLedState({ deviceId, userId, command, source = "next-app
   });
 
   return result.rows[0];
+}
+
+async function addThingVariableForUser({
+  deviceId,
+  userId,
+  variableName,
+  variableType,
+  permission
+}) {
+  await ensureDevicesSchema();
+  const normalizedName = variableName.trim();
+  const normalizedType = variableType.trim().toLowerCase();
+  const normalizedPermission = permission.trim().toLowerCase();
+
+  const currentResult = await db.query(
+    `
+      SELECT thing_variables
+      FROM devices
+      WHERE device_id = $1
+        AND owner_user_id = $2
+    `,
+    [deviceId, userId]
+  );
+
+  const currentDevice = currentResult.rows[0];
+  if (!currentDevice) {
+    return { ok: false, reason: "missing-device" };
+  }
+
+  const variables = Array.isArray(currentDevice.thing_variables) ? currentDevice.thing_variables : [];
+  const exists = variables.some(
+    (item) => typeof item?.name === "string" && item.name.toLowerCase() === normalizedName.toLowerCase()
+  );
+
+  if (exists) {
+    return { ok: false, reason: "duplicate-variable" };
+  }
+
+  const nextVariables = [
+    ...variables,
+    {
+      name: normalizedName,
+      type: normalizedType,
+      permission: normalizedPermission
+    }
+  ];
+
+  const updateResult = await db.query(
+    `
+      UPDATE devices
+      SET thing_variables = $3::jsonb
+      WHERE device_id = $1
+        AND owner_user_id = $2
+      RETURNING device_id, thing_variables
+    `,
+    [deviceId, userId, JSON.stringify(nextVariables)]
+  );
+
+  return { ok: true, device: updateResult.rows[0] };
 }
 
 async function deleteDeviceForUser({ deviceId, userId }) {
@@ -358,6 +421,7 @@ module.exports = {
   listDevices,
   listRecentCommands,
   provisionDeviceForUser,
+  addThingVariableForUser,
   saveCommand,
   saveDeviceWifiConfiguration,
   setDeviceLedState,

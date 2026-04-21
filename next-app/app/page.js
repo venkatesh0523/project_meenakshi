@@ -5,6 +5,7 @@ import DashboardAutoRefresh from "./DashboardAutoRefresh";
 import LedToggleButton from "./LedToggleButton";
 import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
+  addThingVariableForUser,
   deleteDeviceForUser,
   getDeviceForUser,
   listDevices,
@@ -385,6 +386,56 @@ async function deleteArduinoDevice(formData) {
   );
 }
 
+async function addThingVariable(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const deviceId = normalizeField(formData.get("deviceId"));
+  const variableName = normalizeField(formData.get("variableName"));
+  const variableType = normalizeField(formData.get("variableType")) || "boolean";
+  const permission = normalizeField(formData.get("permission")) || "readwrite";
+
+  if (!deviceId || !variableName) {
+    redirect(
+      buildRedirect("/", {
+        builder: "things",
+        authError: "Enter a variable name.",
+        selectedDevice: deviceId
+      })
+    );
+  }
+
+  const result = await addThingVariableForUser({
+    deviceId,
+    userId: user.id,
+    variableName,
+    variableType,
+    permission
+  });
+
+  if (!result.ok) {
+    redirect(
+      buildRedirect("/", {
+        builder: "things",
+        authError:
+          result.reason === "duplicate-variable"
+            ? `Variable ${variableName} already exists for this thing.`
+            : "That thing is not connected to your account.",
+        selectedDevice: deviceId
+      })
+    );
+  }
+
+  revalidatePath("/");
+  redirect(
+    buildRedirect("/", {
+      builder: "things",
+      authMessage: `Variable ${variableName} created.`,
+      selectedDevice: deviceId
+    })
+  );
+}
+
 export default async function HomePage({ searchParams }) {
   const user = await getCurrentUser();
   const requestOrigin = getRequestOrigin();
@@ -402,7 +453,7 @@ export default async function HomePage({ searchParams }) {
   const thingItems = devices.map((device) => ({
     ...device,
     thingName: `${device.device_name} Thing`,
-    variables: ["ledState", "connection", "network"]
+    variables: Array.isArray(device.thing_variables) ? device.thing_variables : []
   }));
 
   return (
@@ -525,14 +576,34 @@ export default async function HomePage({ searchParams }) {
                                     {connection.label}
                                   </span>
                                 </div>
-                                <p className="builderCardCopy">{thing.device_name} is exposing variables for LED state, connectivity, and network.</p>
-                                <div className="builderPillRow">
-                                  {thing.variables.map((item) => (
-                                    <span className="builderMiniPill" key={item}>
-                                      {item}
-                                    </span>
-                                  ))}
-                                </div>
+                                <p className="builderCardCopy">{thing.device_name} groups variables, live connection status, and future automations.</p>
+                                {thing.variables.length > 0 ? (
+                                  <div className="builderPillRow">
+                                    {thing.variables.map((item) => (
+                                      <span className="builderMiniPill" key={item.name}>
+                                        {item.name} · {item.type}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="sectionCopy">No variables yet.</p>
+                                )}
+                                <form action={addThingVariable} className="thingVariableForm">
+                                  <input type="hidden" name="deviceId" value={thing.device_id} />
+                                  <input className="input" name="variableName" placeholder="ledState" required />
+                                  <select className="input" name="variableType" defaultValue="boolean">
+                                    <option value="boolean">Boolean</option>
+                                    <option value="number">Number</option>
+                                    <option value="string">String</option>
+                                  </select>
+                                  <select className="input" name="permission" defaultValue="readwrite">
+                                    <option value="readwrite">Read &amp; Write</option>
+                                    <option value="readonly">Read Only</option>
+                                  </select>
+                                  <button className="button buttonOn" type="submit">
+                                    Add Variable
+                                  </button>
+                                </form>
                               </article>
                             );
                           })}

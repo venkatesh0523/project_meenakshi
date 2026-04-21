@@ -323,6 +323,13 @@ a {
   gap: 8px;
 }
 
+.thingVariableForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 0.8fr)) auto;
+  gap: 10px;
+  align-items: center;
+}
+
 .builderMiniPill {
   display: inline-flex;
   align-items: center;
@@ -764,6 +771,10 @@ a {
   }
 
   .builderGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .thingVariableForm {
     grid-template-columns: 1fr;
   }
 
