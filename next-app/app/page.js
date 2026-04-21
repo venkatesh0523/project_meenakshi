@@ -102,6 +102,25 @@ function buildMqttCommandTopic(device) {
   return `farm1/${device.device_id}/cmd`;
 }
 
+const builderSections = [
+  { id: "things", label: "Things" },
+  { id: "devices", label: "Devices" },
+  { id: "dashboards", label: "Dashboards" },
+  { id: "triggers", label: "Triggers" },
+  { id: "templates", label: "Templates" }
+];
+
+function getBuilderSection(value) {
+  return builderSections.some((section) => section.id === value) ? value : "devices";
+}
+
+function buildBuilderLink(sectionId, selectedDevice = "") {
+  return buildRedirect("/", {
+    builder: sectionId,
+    selectedDevice
+  });
+}
+
 function getCppApiUrl() {
   return (process.env.CPP_API_URL || "http://localhost:8080").replace(/\/+$/, "");
 }
@@ -372,11 +391,19 @@ export default async function HomePage({ searchParams }) {
   const authMessage = searchParams?.authMessage || "";
   const authError = searchParams?.authError || "";
   const authView = searchParams?.authView || "login";
+  const builderSection = getBuilderSection(searchParams?.builder || "devices");
   const selectedDevice = searchParams?.selectedDevice || "";
   const devices = user ? await listDevices(user.id) : [];
   const visibleDevices = selectedDevice
     ? devices.filter((device) => device.device_id === selectedDevice)
     : devices;
+  const deviceCount = devices.length;
+  const onlineCount = devices.filter((device) => getDeviceConnectionState(device).isOnline).length;
+  const thingItems = devices.map((device) => ({
+    ...device,
+    thingName: `${device.device_name} Thing`,
+    variables: ["ledState", "connection", "network"]
+  }));
 
   return (
     <main className="page">
@@ -433,109 +460,282 @@ export default async function HomePage({ searchParams }) {
           ) : (
             <>
               <DashboardAutoRefresh />
-              <div className="sectionHeader">
-                <div>
-                  <p className="authKicker">Arduino Setup</p>
-                  <strong>Welcome, {user.full_name}</strong>
-                </div>
-                <div className="sectionActions">
-                  <form action={logoutUser}>
+              <div className="builderLayout">
+                <aside className="builderSidebar">
+                  <div className="builderSidebarHeader">
+                    <p className="authKicker">IoT Builder</p>
+                    <strong>{user.full_name}</strong>
+                  </div>
+                  <nav className="builderNav">
+                    {builderSections.map((section) => (
+                      <a
+                        key={section.id}
+                        className={`builderNavItem ${builderSection === section.id ? "builderNavItemActive" : ""}`}
+                        href={buildBuilderLink(section.id, selectedDevice)}
+                      >
+                        {section.label}
+                      </a>
+                    ))}
+                  </nav>
+                  <form action={logoutUser} className="builderSidebarFooter">
                     <button className="button buttonGhost" type="submit">
                       Logout
                     </button>
                   </form>
-                </div>
-              </div>
+                </aside>
 
-              <div className="historyCard connectDeviceCard">
-                <div>
-                  <strong>Connect Arduino</strong>
-                </div>
+                <div className="builderContent">
+                  <div className="sectionHeader builderHeader">
+                    <div>
+                      <p className="authKicker">Arduino Cloud Style</p>
+                      <strong>{builderSections.find((section) => section.id === builderSection)?.label}</strong>
+                    </div>
+                    <div className="builderHeaderStats">
+                      <div className="builderStat">
+                        <span>Devices</span>
+                        <strong>{deviceCount}</strong>
+                      </div>
+                      <div className="builderStat">
+                        <span>Online</span>
+                        <strong>{onlineCount}</strong>
+                      </div>
+                    </div>
+                  </div>
 
-                <WifiSerialProvisioner
-                  devices={devices.map((device) => ({
-                    device_id: device.device_id,
-                    device_name: device.device_name
-                  }))}
-                  selectedDevice={selectedDevice}
-                  saveWifiAction={saveAndConnectArduinoDevice}
-                />
-              </div>
+                  {builderSection === "things" ? (
+                    <div className="builderSection stackCompact">
+                      <div className="historyCard">
+                        <strong>Things</strong>
+                        <p className="sectionCopy">Each thing groups device variables, status, and future automations.</p>
+                      </div>
 
-              {visibleDevices.length > 0 ? (
-                <div className="deviceConfigList">
-                  {visibleDevices.map((device) => {
-                    const connection = getDeviceConnectionState(device);
+                      {thingItems.length > 0 ? (
+                        <div className="builderGrid">
+                          {thingItems.map((thing) => {
+                            const connection = getDeviceConnectionState(thing);
 
-                    return (
-                      <article className="deviceConfigCard" key={device.device_id}>
-                        <div className="deviceConfigTop">
-                          <div>
-                            <p className="authKicker">Device</p>
-                            <strong>{device.board_model || "Arduino UNO R4 WiFi"}</strong>
+                            return (
+                              <article className="builderCard" key={thing.device_id}>
+                                <div className="builderCardTop">
+                                  <div>
+                                    <p className="authKicker">Thing</p>
+                                    <strong>{thing.thingName}</strong>
+                                  </div>
+                                  <span className={`chip ${connection.isOnline ? "chipOnline" : "chipOffline"}`}>
+                                    {connection.label}
+                                  </span>
+                                </div>
+                                <p className="builderCardCopy">{thing.device_name} is exposing variables for LED state, connectivity, and network.</p>
+                                <div className="builderPillRow">
+                                  {thing.variables.map((item) => (
+                                    <span className="builderMiniPill" key={item}>
+                                      {item}
+                                    </span>
+                                  ))}
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="historyCard">
+                          <strong>No things yet</strong>
+                          <p className="sectionCopy">Create a device in Devices to automatically create its first thing.</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {builderSection === "devices" ? (
+                    <div className="builderSection stackCompact">
+                      <div className="historyCard connectDeviceCard">
+                        <div>
+                          <strong>Connect Arduino</strong>
+                        </div>
+
+                        <WifiSerialProvisioner
+                          devices={devices.map((device) => ({
+                            device_id: device.device_id,
+                            device_name: device.device_name
+                          }))}
+                          selectedDevice={selectedDevice}
+                          saveWifiAction={saveAndConnectArduinoDevice}
+                        />
+                      </div>
+
+                      {visibleDevices.length > 0 ? (
+                        <div className="deviceConfigList">
+                          {visibleDevices.map((device) => {
+                            const connection = getDeviceConnectionState(device);
+
+                            return (
+                              <article className="deviceConfigCard" key={device.device_id}>
+                                <div className="deviceConfigTop">
+                                  <div>
+                                    <p className="authKicker">Device</p>
+                                    <strong>{device.board_model || "Arduino UNO R4 WiFi"}</strong>
+                                  </div>
+                                  <span className={`chip ${connection.isOnline ? "chipOnline" : "chipOffline"}`}>
+                                    {connection.label}
+                                  </span>
+                                </div>
+
+                                <div className="deviceConfigRow">
+                                  <span>Name</span>
+                                  <strong>{device.device_name}</strong>
+                                </div>
+                                <div className="deviceConfigRow">
+                                  <span>Network</span>
+                                  <strong>{device.wifi_ssid || "-"}</strong>
+                                </div>
+                                <div className="deviceConfigRow">
+                                  <span>Status</span>
+                                  <strong>{connection.label}</strong>
+                                </div>
+                                <div className="deviceConfigRow">
+                                  <span>Last Activity</span>
+                                  <strong>{connection.lastActivity}</strong>
+                                </div>
+                                <div className="deviceConfigRow">
+                                  <span>ID</span>
+                                  <code>{device.device_id}</code>
+                                </div>
+                                <div className="deviceConfigRow">
+                                  <span>Serial Number</span>
+                                  <code>{device.serial_number || "-"}</code>
+                                </div>
+                                <div className="deviceConfigRow">
+                                  <span>Device Secret</span>
+                                  <code>{device.device_secret || "-"}</code>
+                                </div>
+                                <div className="deviceConfigRow">
+                                  <span>Heartbeat URL</span>
+                                  <code>{buildDeviceHeartbeatUrl(requestOrigin, device)}</code>
+                                </div>
+                                <div className="deviceConfigRow">
+                                  <span>MQTT Command Topic</span>
+                                  <code>{buildMqttCommandTopic(device)}</code>
+                                </div>
+                                <div className="deviceConfigRow">
+                                  <span>GPIO 13 LED</span>
+                                  <strong>{device.led_state || "OFF"}</strong>
+                                </div>
+                                <div className="deviceActions">
+                                  <form action={toggleLedCommand}>
+                                    <input type="hidden" name="deviceId" value={device.device_id} />
+                                    <LedToggleButton isOn={(device.led_state || "OFF") === "ON"} />
+                                  </form>
+                                  <form action={deleteArduinoDevice}>
+                                    <input type="hidden" name="deviceId" value={device.device_id} />
+                                    <button className="button buttonDanger" type="submit">
+                                      Delete Device
+                                    </button>
+                                  </form>
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {builderSection === "dashboards" ? (
+                    <div className="builderSection stackCompact">
+                      <div className="historyCard">
+                        <strong>Dashboards</strong>
+                        <p className="sectionCopy">Arrange live telemetry, LED state, and connection status into operator views.</p>
+                      </div>
+                      <div className="builderGrid">
+                        <article className="builderCard">
+                          <div className="builderCardTop">
+                            <div>
+                              <p className="authKicker">Dashboard</p>
+                              <strong>Greenhouse Overview</strong>
+                            </div>
+                            <span className="chip chipOnline">Live</span>
                           </div>
-                          <span className={`chip ${connection.isOnline ? "chipOnline" : "chipOffline"}`}>
-                            {connection.label}
-                          </span>
-                        </div>
+                          <p className="builderCardCopy">Track online devices, current LED state, and network health from one screen.</p>
+                        </article>
+                        <article className="builderCard">
+                          <div className="builderCardTop">
+                            <div>
+                              <p className="authKicker">Dashboard</p>
+                              <strong>Device Control</strong>
+                            </div>
+                            <span className="chip">Draft</span>
+                          </div>
+                          <p className="builderCardCopy">A focused control layout for switching GPIO outputs and reviewing heartbeat timing.</p>
+                        </article>
+                      </div>
+                    </div>
+                  ) : null}
 
-                        <div className="deviceConfigRow">
-                          <span>Name</span>
-                          <strong>{device.device_name}</strong>
-                        </div>
-                        <div className="deviceConfigRow">
-                          <span>Network</span>
-                          <strong>{device.wifi_ssid || "-"}</strong>
-                        </div>
-                        <div className="deviceConfigRow">
-                          <span>Status</span>
-                          <strong>{connection.label}</strong>
-                        </div>
-                        <div className="deviceConfigRow">
-                          <span>Last Activity</span>
-                          <strong>{connection.lastActivity}</strong>
-                        </div>
-                        <div className="deviceConfigRow">
-                          <span>ID</span>
-                          <code>{device.device_id}</code>
-                        </div>
-                        <div className="deviceConfigRow">
-                          <span>Serial Number</span>
-                          <code>{device.serial_number || "-"}</code>
-                        </div>
-                        <div className="deviceConfigRow">
-                          <span>Device Secret</span>
-                          <code>{device.device_secret || "-"}</code>
-                        </div>
-                        <div className="deviceConfigRow">
-                          <span>Heartbeat URL</span>
-                          <code>{buildDeviceHeartbeatUrl(requestOrigin, device)}</code>
-                        </div>
-                        <div className="deviceConfigRow">
-                          <span>MQTT Command Topic</span>
-                          <code>{buildMqttCommandTopic(device)}</code>
-                        </div>
-                        <div className="deviceConfigRow">
-                          <span>GPIO 13 LED</span>
-                          <strong>{device.led_state || "OFF"}</strong>
-                        </div>
-                        <div className="deviceActions">
-                          <form action={toggleLedCommand}>
-                            <input type="hidden" name="deviceId" value={device.device_id} />
-                            <LedToggleButton isOn={(device.led_state || "OFF") === "ON"} />
-                          </form>
-                          <form action={deleteArduinoDevice}>
-                            <input type="hidden" name="deviceId" value={device.device_id} />
-                            <button className="button buttonDanger" type="submit">
-                              Delete Device
-                            </button>
-                          </form>
-                        </div>
-                      </article>
-                    );
-                  })}
+                  {builderSection === "triggers" ? (
+                    <div className="builderSection stackCompact">
+                      <div className="historyCard">
+                        <strong>Triggers</strong>
+                        <p className="sectionCopy">Create actions that react to connectivity, schedules, or variable changes.</p>
+                      </div>
+                      <div className="builderGrid">
+                        <article className="builderCard">
+                          <div className="builderCardTop">
+                            <div>
+                              <p className="authKicker">Trigger</p>
+                              <strong>Offline Alert</strong>
+                            </div>
+                            <span className="chip chipOffline">Suggestion</span>
+                          </div>
+                          <p className="builderCardCopy">Notify when a device heartbeat is missing for more than one minute.</p>
+                        </article>
+                        <article className="builderCard">
+                          <div className="builderCardTop">
+                            <div>
+                              <p className="authKicker">Trigger</p>
+                              <strong>Night Schedule</strong>
+                            </div>
+                            <span className="chip">Suggestion</span>
+                          </div>
+                          <p className="builderCardCopy">Switch the LED off automatically outside active hours.</p>
+                        </article>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {builderSection === "templates" ? (
+                    <div className="builderSection stackCompact">
+                      <div className="historyCard">
+                        <strong>Templates</strong>
+                        <p className="sectionCopy">Reusable setups for common Arduino devices, dashboards, and automation flows.</p>
+                      </div>
+                      <div className="builderGrid">
+                        <article className="builderCard">
+                          <div className="builderCardTop">
+                            <div>
+                              <p className="authKicker">Template</p>
+                              <strong>UNO R4 WiFi LED</strong>
+                            </div>
+                            <span className="chip chipOnline">Ready</span>
+                          </div>
+                          <p className="builderCardCopy">One thing, one device, one LED widget, and a retained MQTT command topic.</p>
+                        </article>
+                        <article className="builderCard">
+                          <div className="builderCardTop">
+                            <div>
+                              <p className="authKicker">Template</p>
+                              <strong>Greenhouse Starter</strong>
+                            </div>
+                            <span className="chip">Draft</span>
+                          </div>
+                          <p className="builderCardCopy">Add sensors, dashboards, and trigger suggestions for a greenhouse deployment.</p>
+                        </article>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {builderSection === "devices" || builderSection === "things" || builderSection === "dashboards" || builderSection === "triggers" || builderSection === "templates" ? null : null}
                 </div>
-              ) : null}
+              </div>
             </>
           )}
         </section>

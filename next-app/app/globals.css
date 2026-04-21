@@ -197,6 +197,144 @@ a {
   flex-wrap: wrap;
 }
 
+.builderLayout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.builderSidebar {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+  position: sticky;
+  top: 28px;
+}
+
+.builderSidebarHeader {
+  display: grid;
+  gap: 4px;
+}
+
+.builderNav {
+  display: grid;
+  gap: 8px;
+}
+
+.builderNavItem {
+  display: block;
+  padding: 12px 14px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--muted);
+  background: rgba(246, 240, 232, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+  font-weight: 700;
+}
+
+.builderNavItemActive {
+  color: white;
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.builderSidebarFooter {
+  margin-top: 4px;
+}
+
+.builderContent {
+  display: grid;
+  gap: 18px;
+}
+
+.builderHeader {
+  padding: 18px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.builderHeaderStats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.builderStat {
+  min-width: 92px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(246, 240, 232, 0.92);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.builderStat span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.builderSection {
+  display: grid;
+  gap: 14px;
+}
+
+.stackCompact {
+  gap: 14px;
+}
+
+.builderGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.builderCard {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.builderCardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.builderCardCopy,
+.sectionCopy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.builderPillRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.builderMiniPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(246, 240, 232, 0.92);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+  color: var(--primary-dark);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
 .cardGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -614,6 +752,18 @@ a {
   }
 
   .connectDeviceForm {
+    grid-template-columns: 1fr;
+  }
+
+  .builderLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .builderSidebar {
+    position: static;
+  }
+
+  .builderGrid {
     grid-template-columns: 1fr;
   }
 
