@@ -391,10 +391,112 @@ async function addThingVariableForUser({
     ...variables,
     {
       name: normalizedName,
+      declaration: normalizedName,
       type: normalizedType,
-      permission: normalizedPermission
+      permission: normalizedPermission,
+      updatePolicy: "on_change",
+      syncEnabled: false
     }
   ];
+
+  const updateResult = await db.query(
+    `
+      UPDATE things
+      SET
+        variables = $3::jsonb,
+        updated_at = NOW()
+      WHERE device_id = $1
+        AND owner_user_id = $2
+      RETURNING device_id, variables
+    `,
+    [deviceId, userId, JSON.stringify(nextVariables)]
+  );
+
+  if (!updateResult.rows[0]) {
+    return { ok: false, reason: "missing-device" };
+  }
+
+  await db.query(
+    `
+      UPDATE devices
+      SET thing_variables = $3::jsonb
+      WHERE device_id = $1
+        AND owner_user_id = $2
+    `,
+    [deviceId, userId, JSON.stringify(nextVariables)]
+  );
+
+  return { ok: true, device: updateResult.rows[0] };
+}
+
+async function updateThingVariableForUser({
+  deviceId,
+  userId,
+  originalVariableName,
+  variableName,
+  variableType,
+  permission,
+  updatePolicy,
+  syncEnabled
+}) {
+  await ensureDevicesSchema();
+  const currentResult = await db.query(
+    `
+      SELECT COALESCE(things.variables, devices.thing_variables, '[]'::jsonb) AS thing_variables
+      FROM devices
+      LEFT JOIN things
+        ON things.device_id = devices.device_id
+       AND things.owner_user_id = devices.owner_user_id
+      WHERE devices.device_id = $1
+        AND devices.owner_user_id = $2
+    `,
+    [deviceId, userId]
+  );
+
+  const currentDevice = currentResult.rows[0];
+  if (!currentDevice) {
+    return { ok: false, reason: "missing-device" };
+  }
+
+  const variables = Array.isArray(currentDevice.thing_variables) ? currentDevice.thing_variables : [];
+  const currentName = originalVariableName.trim();
+  const nextName = variableName.trim();
+  const nextType = variableType.trim().toLowerCase();
+  const nextPermission = permission.trim().toLowerCase();
+  const nextUpdatePolicy = updatePolicy.trim().toLowerCase();
+  const nextSyncEnabled = Boolean(syncEnabled);
+  const targetIndex = variables.findIndex(
+    (item) => typeof item?.name === "string" && item.name.toLowerCase() === currentName.toLowerCase()
+  );
+
+  if (targetIndex === -1) {
+    return { ok: false, reason: "missing-variable" };
+  }
+
+  const duplicateIndex = variables.findIndex(
+    (item, index) =>
+      index !== targetIndex &&
+      typeof item?.name === "string" &&
+      item.name.toLowerCase() === nextName.toLowerCase()
+  );
+
+  if (duplicateIndex !== -1) {
+    return { ok: false, reason: "duplicate-variable" };
+  }
+
+  const nextVariables = variables.map((item, index) =>
+    index === targetIndex
+      ? {
+          ...item,
+          name: nextName,
+          declaration: nextName,
+          type: nextType,
+          permission: nextPermission,
+          updatePolicy: nextUpdatePolicy,
+          syncEnabled: nextSyncEnabled
+        }
+      : item
+  );
 
   const updateResult = await db.query(
     `
@@ -651,5 +753,6 @@ module.exports = {
   saveCommand,
   saveDeviceWifiConfiguration,
   setDeviceLedState,
+  updateThingVariableForUser,
   updateDeviceHeartbeat
 };

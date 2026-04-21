@@ -299,6 +299,37 @@ a {
   gap: 14px;
 }
 
+.thingEditorLayout {
+  display: grid;
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.thingNavigator,
+.thingEditorContent {
+  display: grid;
+  gap: 14px;
+}
+
+.thingListItem {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+  text-decoration: none;
+}
+
+.thingListItemActive {
+  border-color: rgba(47, 107, 59, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(47, 107, 59, 0.2);
+  background: rgba(228, 240, 228, 0.92);
+}
+
 .thingCard {
   display: grid;
   gap: 14px;
@@ -369,6 +400,126 @@ a {
 .thingActionForm {
   display: grid;
   gap: 10px;
+}
+
+.thingSectionTabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.thingSectionTab {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(31, 42, 31, 0.08);
+  background: rgba(246, 240, 232, 0.92);
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.thingSectionTabActive {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.thingSketchCard {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 8px;
+  background: rgba(246, 240, 232, 0.92);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.thingDataLayout {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.thingVariablesPanel,
+.thingVariableDetails {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.thingPanelHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.thingVariableList {
+  display: grid;
+  gap: 10px;
+}
+
+.thingVariableItem {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(31, 42, 31, 0.08);
+  background: rgba(246, 240, 232, 0.92);
+  text-decoration: none;
+}
+
+.thingVariableItem span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.thingVariableItemActive {
+  border-color: rgba(47, 107, 59, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(47, 107, 59, 0.2);
+  background: rgba(228, 240, 228, 0.92);
+}
+
+.thingVariableDetailsForm {
+  display: grid;
+  gap: 14px;
+}
+
+.thingField {
+  display: grid;
+  gap: 8px;
+}
+
+.thingField span {
+  font-size: 0.88rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.thingToggleField {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(246, 240, 232, 0.92);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.thingToggleField input {
+  margin-top: 2px;
+}
+
+.thingToggleField div {
+  display: grid;
+  gap: 4px;
+}
+
+.thingToggleField span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .builderCard {
@@ -848,6 +999,11 @@ a {
   }
 
   .builderGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .thingEditorLayout,
+  .thingDataLayout {
     grid-template-columns: 1fr;
   }
 

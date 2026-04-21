@@ -14,7 +14,8 @@ import {
   provisionDeviceForUser,
   renameThingForUser,
   saveDeviceWifiConfiguration,
-  setDeviceLedState
+  setDeviceLedState,
+  updateThingVariableForUser
 } from "../lib/devices";
 import {
   authenticateUser,
@@ -123,6 +124,39 @@ function buildBuilderLink(sectionId, selectedDevice = "") {
     builder: sectionId,
     selectedDevice
   });
+}
+
+function buildThingVariableLink(deviceId, variableName = "") {
+  return buildRedirect("/", {
+    builder: "things",
+    selectedDevice: deviceId,
+    selectedVariable: variableName
+  });
+}
+
+function normalizeThingVariable(variable) {
+  const name = typeof variable?.name === "string" && variable.name.trim() ? variable.name.trim() : "unnamed_variable";
+  const rawType = typeof variable?.type === "string" ? variable.type.trim().toLowerCase() : "boolean";
+  const rawPermission = typeof variable?.permission === "string" ? variable.permission.trim().toLowerCase() : "read_write";
+  const rawUpdatePolicy =
+    typeof variable?.updatePolicy === "string" ? variable.updatePolicy.trim().toLowerCase() : "on_change";
+
+  return {
+    name,
+    declaration:
+      typeof variable?.declaration === "string" && variable.declaration.trim() ? variable.declaration.trim() : name,
+    type: rawType,
+    permission: rawPermission === "readwrite" ? "read_write" : rawPermission === "readonly" ? "read_only" : rawPermission,
+    updatePolicy: rawUpdatePolicy === "onchange" ? "on_change" : rawUpdatePolicy,
+    syncEnabled: Boolean(variable?.syncEnabled)
+  };
+}
+
+function formatVariableLabel(value) {
+  return value
+    .split("_")
+    .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1)}` : part))
+    .join(" ");
 }
 
 function getCppApiUrl() {
@@ -396,7 +430,7 @@ async function addThingVariable(formData) {
   const deviceId = normalizeField(formData.get("deviceId"));
   const variableName = normalizeField(formData.get("variableName"));
   const variableType = normalizeField(formData.get("variableType")) || "boolean";
-  const permission = normalizeField(formData.get("permission")) || "readwrite";
+  const permission = normalizeField(formData.get("permission")) || "read_write";
 
   if (!deviceId || !variableName) {
     redirect(
@@ -435,6 +469,67 @@ async function addThingVariable(formData) {
       builder: "things",
       authMessage: `Variable ${variableName} created.`,
       selectedDevice: deviceId
+    })
+  );
+}
+
+async function updateThingVariable(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const deviceId = normalizeField(formData.get("deviceId"));
+  const originalVariableName = normalizeField(formData.get("originalVariableName"));
+  const variableName = normalizeField(formData.get("variableName"));
+  const variableType = normalizeField(formData.get("variableType")) || "boolean";
+  const permission = normalizeField(formData.get("permission")) || "read_write";
+  const updatePolicy = normalizeField(formData.get("updatePolicy")) || "on_change";
+  const syncEnabled = formData.get("syncEnabled") === "true";
+
+  if (!deviceId || !originalVariableName || !variableName) {
+    redirect(
+      buildRedirect("/", {
+        builder: "things",
+        authError: "Choose a thing variable to update.",
+        selectedDevice: deviceId,
+        selectedVariable: originalVariableName
+      })
+    );
+  }
+
+  const result = await updateThingVariableForUser({
+    deviceId,
+    userId: user.id,
+    originalVariableName,
+    variableName,
+    variableType,
+    permission,
+    updatePolicy,
+    syncEnabled
+  });
+
+  if (!result.ok) {
+    const message =
+      result.reason === "duplicate-variable"
+        ? `Variable ${variableName} already exists for this thing.`
+        : "Unable to update the variable properties.";
+
+    redirect(
+      buildRedirect("/", {
+        builder: "things",
+        authError: message,
+        selectedDevice: deviceId,
+        selectedVariable: originalVariableName
+      })
+    );
+  }
+
+  revalidatePath("/");
+  redirect(
+    buildRedirect("/", {
+      builder: "things",
+      authMessage: `Variable ${variableName} updated.`,
+      selectedDevice: deviceId,
+      selectedVariable: variableName
     })
   );
 }
@@ -524,6 +619,7 @@ export default async function HomePage({ searchParams }) {
   const authView = searchParams?.authView || "login";
   const builderSection = getBuilderSection(searchParams?.builder || "devices");
   const selectedDevice = searchParams?.selectedDevice || "";
+  const selectedVariable = searchParams?.selectedVariable || "";
   const devices = user ? await listDevices(user.id) : [];
   const visibleDevices = selectedDevice
     ? devices.filter((device) => device.device_id === selectedDevice)
@@ -533,8 +629,12 @@ export default async function HomePage({ searchParams }) {
   const thingItems = devices.map((device) => ({
     ...device,
     thingName: `${device.device_name} Thing`,
-    variables: Array.isArray(device.thing_variables) ? device.thing_variables : []
+    variables: Array.isArray(device.thing_variables) ? device.thing_variables.map(normalizeThingVariable) : []
   }));
+  const selectedThing =
+    (selectedDevice ? thingItems.find((thing) => thing.device_id === selectedDevice) : null) || thingItems[0] || null;
+  const selectedThingVariable =
+    selectedThing?.variables.find((variable) => variable.name === selectedVariable) || selectedThing?.variables[0] || null;
 
   return (
     <main className="page">
@@ -635,54 +735,53 @@ export default async function HomePage({ searchParams }) {
 
                   {builderSection === "things" ? (
                     <div className="builderSection stackCompact">
-                      <div className="historyCard">
-                        <strong>Things</strong>
-                        <p className="sectionCopy">Each thing groups device variables, status, and future automations.</p>
-                      </div>
+                      {thingItems.length > 0 && selectedThing ? (
+                        <div className="thingEditorLayout">
+                          <aside className="thingNavigator">
+                            <div className="historyCard">
+                              <strong>Things</strong>
+                              <p className="sectionCopy">Pick a thing to edit its sketch and variable properties.</p>
+                            </div>
+                            <div className="thingsList">
+                              {thingItems.map((thing) => {
+                                const connection = getDeviceConnectionState(thing);
+                                const isActive = thing.device_id === selectedThing.device_id;
 
-                      {thingItems.length > 0 ? (
-                        <div className="thingsList">
-                          {thingItems.map((thing) => {
-                            const connection = getDeviceConnectionState(thing);
+                                return (
+                                  <a
+                                    key={thing.device_id}
+                                    className={`thingListItem ${isActive ? "thingListItemActive" : ""}`}
+                                    href={buildThingVariableLink(thing.device_id)}
+                                  >
+                                    <div>
+                                      <p className="authKicker">Thing</p>
+                                      <strong>{thing.thing_name || thing.thingName}</strong>
+                                    </div>
+                                    <span className={`chip ${connection.isOnline ? "chipOnline" : "chipOffline"}`}>
+                                      {connection.label}
+                                    </span>
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          </aside>
 
-                            return (
-                              <article className="thingCard" key={thing.device_id}>
-                                <div className="thingHeader">
-                                  <div>
-                                    <p className="authKicker">Thing</p>
-                                    <strong>{thing.thing_name || thing.thingName}</strong>
-                                  </div>
-                                  <span className={`chip ${connection.isOnline ? "chipOnline" : "chipOffline"}`}>
-                                    {connection.label}
-                                  </span>
-                                </div>
-                                <div className="thingMetaGrid">
-                                  <div className="thingMetaRow">
-                                    <span>Thing Name</span>
-                                    <strong>{thing.thing_name || thing.thingName}</strong>
-                                  </div>
-                                  <div className="thingMetaRow">
-                                    <span>Device Sketch</span>
-                                    <code>{thing.device_sketch || "uno_r4_wifi_cloud_device"}</code>
-                                  </div>
-                                  <div className="thingMetaRow">
-                                    <span>Last Modified</span>
-                                    <strong>{formatDeviceDate(thing.thing_updated_at || thing.created_at)}</strong>
-                                  </div>
-                                  <div className="thingMetaRow">
-                                    <span>Created</span>
-                                    <strong>{formatDeviceDate(thing.thing_created_at || thing.created_at)}</strong>
-                                  </div>
+                          <div className="thingEditorContent">
+                            <article className="thingCard">
+                              <div className="thingHeader">
+                                <div>
+                                  <p className="authKicker">Thing</p>
+                                  <strong>{selectedThing.thing_name || selectedThing.thingName}</strong>
                                 </div>
                                 <details className="thingMenu">
                                   <summary className="thingMenuButton">...</summary>
                                   <div className="thingMenuPanel">
                                     <form action={renameThing} className="thingActionForm">
-                                      <input type="hidden" name="deviceId" value={thing.device_id} />
+                                      <input type="hidden" name="deviceId" value={selectedThing.device_id} />
                                       <input
                                         className="input"
                                         name="thingName"
-                                        defaultValue={thing.thing_name || thing.thingName}
+                                        defaultValue={selectedThing.thing_name || selectedThing.thingName}
                                         required
                                       />
                                       <button className="button buttonGhost" type="submit">
@@ -690,50 +789,180 @@ export default async function HomePage({ searchParams }) {
                                       </button>
                                     </form>
                                     <form action={duplicateThing}>
-                                      <input type="hidden" name="deviceId" value={thing.device_id} />
+                                      <input type="hidden" name="deviceId" value={selectedThing.device_id} />
                                       <button className="button buttonGhost" type="submit">
                                         Duplicate
                                       </button>
                                     </form>
                                     <form action={deleteThing}>
-                                      <input type="hidden" name="deviceId" value={thing.device_id} />
+                                      <input type="hidden" name="deviceId" value={selectedThing.device_id} />
                                       <button className="button buttonDanger" type="submit">
                                         Delete
                                       </button>
                                     </form>
                                   </div>
                                 </details>
-                                <p className="builderCardCopy">{thing.device_name} groups variables, live connection status, and future automations.</p>
-                                <div className="builderPillRow">
-                                  {thing.variables.length > 0 ? (
-                                    thing.variables.map((item) => (
-                                      <span className="builderMiniPill" key={item.name}>
-                                        {item.name} · {item.type}
-                                      </span>
-                                    ))
-                                  ) : (
-                                    <span className="builderMiniPill">No variables</span>
-                                  )}
+                              </div>
+
+                              <div className="thingSectionTabs">
+                                <span className="thingSectionTab thingSectionTabActive">Data</span>
+                                <span className="thingSectionTab">Sketch</span>
+                              </div>
+
+                              <div className="thingMetaGrid">
+                                <div className="thingMetaRow">
+                                  <span>Thing Name</span>
+                                  <strong>{selectedThing.thing_name || selectedThing.thingName}</strong>
                                 </div>
-                                <form action={addThingVariable} className="thingVariableForm">
-                                  <input type="hidden" name="deviceId" value={thing.device_id} />
-                                  <input className="input" name="variableName" placeholder="ledState" required />
-                                  <select className="input" name="variableType" defaultValue="boolean">
-                                    <option value="boolean">Boolean</option>
-                                    <option value="number">Number</option>
-                                    <option value="string">String</option>
-                                  </select>
-                                  <select className="input" name="permission" defaultValue="readwrite">
-                                    <option value="readwrite">Read &amp; Write</option>
-                                    <option value="readonly">Read Only</option>
-                                  </select>
-                                  <button className="button buttonOn" type="submit">
-                                    Add Variable
-                                  </button>
-                                </form>
-                              </article>
-                            );
-                          })}
+                                <div className="thingMetaRow">
+                                  <span>Device Sketch</span>
+                                  <code>{selectedThing.device_sketch || "uno_r4_wifi_cloud_device"}</code>
+                                </div>
+                                <div className="thingMetaRow">
+                                  <span>Last Modified</span>
+                                  <strong>{formatDeviceDate(selectedThing.thing_updated_at || selectedThing.created_at)}</strong>
+                                </div>
+                                <div className="thingMetaRow">
+                                  <span>Creation Date</span>
+                                  <strong>{formatDeviceDate(selectedThing.thing_created_at || selectedThing.created_at)}</strong>
+                                </div>
+                              </div>
+
+                              <div className="thingSketchCard">
+                                <div>
+                                  <p className="authKicker">Sketch</p>
+                                  <strong>{selectedThing.device_sketch || "uno_r4_wifi_cloud_device"}</strong>
+                                </div>
+                                <p className="builderCardCopy">
+                                  This thing is linked to the Arduino sketch running on {selectedThing.device_name}.
+                                </p>
+                              </div>
+
+                              <div className="thingDataLayout">
+                                <section className="thingVariablesPanel">
+                                  <div className="thingPanelHeader">
+                                    <div>
+                                      <strong>Variables</strong>
+                                      <p className="sectionCopy">
+                                        Define the data your Thing exchanges with the device and shows on dashboards.
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="thingVariableList">
+                                    {selectedThing.variables.length > 0 ? (
+                                      selectedThing.variables.map((item) => (
+                                        <a
+                                          key={item.name}
+                                          className={`thingVariableItem ${
+                                            selectedThingVariable?.name === item.name ? "thingVariableItemActive" : ""
+                                          }`}
+                                          href={buildThingVariableLink(selectedThing.device_id, item.name)}
+                                        >
+                                          <strong>{item.name}</strong>
+                                          <span>{formatVariableLabel(item.type)}</span>
+                                        </a>
+                                      ))
+                                    ) : (
+                                      <div className="builderMiniPill">No variables yet</div>
+                                    )}
+                                  </div>
+
+                                  <form action={addThingVariable} className="thingVariableForm">
+                                    <input type="hidden" name="deviceId" value={selectedThing.device_id} />
+                                    <input className="input" name="variableName" placeholder="ledon_red" required />
+                                    <select className="input" name="variableType" defaultValue="boolean">
+                                      <option value="boolean">Boolean</option>
+                                      <option value="number">Number</option>
+                                      <option value="string">String</option>
+                                    </select>
+                                    <select className="input" name="permission" defaultValue="read_write">
+                                      <option value="read_write">Read Write</option>
+                                      <option value="read_only">Read Only</option>
+                                    </select>
+                                    <button className="button buttonOn" type="submit">
+                                      Add Variable
+                                    </button>
+                                  </form>
+                                </section>
+
+                                <section className="thingVariableDetails">
+                                  <div className="thingPanelHeader">
+                                    <div>
+                                      <strong>Variable Properties</strong>
+                                      <p className="sectionCopy">Edit how the selected variable syncs with your Arduino and dashboards.</p>
+                                    </div>
+                                  </div>
+
+                                  {selectedThingVariable ? (
+                                    <form action={updateThingVariable} className="thingVariableDetailsForm">
+                                      <input type="hidden" name="deviceId" value={selectedThing.device_id} />
+                                      <input type="hidden" name="originalVariableName" value={selectedThingVariable.name} />
+
+                                      <label className="thingField">
+                                        <span>Declaration</span>
+                                        <input
+                                          className="input"
+                                          name="variableName"
+                                          defaultValue={selectedThingVariable.declaration}
+                                          required
+                                        />
+                                      </label>
+
+                                      <label className="thingField">
+                                        <span>Variable Type</span>
+                                        <select className="input" name="variableType" defaultValue={selectedThingVariable.type}>
+                                          <option value="boolean">Boolean</option>
+                                          <option value="number">Number</option>
+                                          <option value="string">String</option>
+                                        </select>
+                                      </label>
+
+                                      <label className="thingField">
+                                        <span>Variable Permission</span>
+                                        <select className="input" name="permission" defaultValue={selectedThingVariable.permission}>
+                                          <option value="read_write">READ_WRITE</option>
+                                          <option value="read_only">READ_ONLY</option>
+                                        </select>
+                                      </label>
+
+                                      <label className="thingField">
+                                        <span>Variable Update Policy</span>
+                                        <select className="input" name="updatePolicy" defaultValue={selectedThingVariable.updatePolicy}>
+                                          <option value="on_change">ON_CHANGE</option>
+                                          <option value="periodic">PERIODIC</option>
+                                        </select>
+                                      </label>
+
+                                      <label className="thingToggleField">
+                                        <input
+                                          type="checkbox"
+                                          name="syncEnabled"
+                                          value="true"
+                                          defaultChecked={selectedThingVariable.syncEnabled}
+                                        />
+                                        <div>
+                                          <strong>Sync with other Things</strong>
+                                          <span>
+                                            Sync this variable with others of the same type across different Things.
+                                          </span>
+                                        </div>
+                                      </label>
+
+                                      <button className="button buttonOn" type="submit">
+                                        Save Variable
+                                      </button>
+                                    </form>
+                                  ) : (
+                                    <div className="historyCard">
+                                      <strong>No variable selected</strong>
+                                      <p className="sectionCopy">Add a variable to start editing its properties.</p>
+                                    </div>
+                                  )}
+                                </section>
+                              </div>
+                            </article>
+                          </div>
                         </div>
                       ) : (
                         <div className="historyCard">
