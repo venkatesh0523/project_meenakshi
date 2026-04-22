@@ -6,13 +6,14 @@
 const char* DEFAULT_WIFI_SSID = "Telia-B798AC";
 const char* DEFAULT_WIFI_PASSWORD = "pnK7x6nhh222h2wx";
 
-const char* MQTT_HOST = "172.18.116.147";
+// Oracle Cloud public IP. Keep this aligned with the deployed dashboard and broker.
+const char* MQTT_HOST = "141.148.239.103";
 const int MQTT_PORT = 1883;
-const char* CLOUD_HOST = "172.18.116.147";
+const char* CLOUD_HOST = "141.148.239.103";
 const int CLOUD_PORT = 3000;
 
-const char* DEVICE_ID = "arduino-led-02";
-const char* DEVICE_SECRET = "1XSm-sWxFYaHX3vaJxWB-gRk";
+const char* DEVICE_ID = "a119c318-d7c7-41af-972d-5587e8506a41";
+const char* DEVICE_SECRET = "PVs5mxEQlVoYnB2GgfS--FtH";
 const int LED_PIN = 13;
 const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
 
