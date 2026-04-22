@@ -54,6 +54,50 @@ CREATE TABLE IF NOT EXISTS led_commands (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS things (
+  id SERIAL PRIMARY KEY,
+  device_id VARCHAR(100) NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+  owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  thing_name VARCHAR(150) NOT NULL,
+  device_sketch VARCHAR(200) NOT NULL DEFAULT 'uno_r4_wifi_cloud_device',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (device_id)
+);
+
+CREATE TABLE IF NOT EXISTS thing_variables (
+  id SERIAL PRIMARY KEY,
+  thing_id INTEGER NOT NULL REFERENCES things(id) ON DELETE CASCADE,
+  variable_name VARCHAR(150) NOT NULL,
+  variable_type VARCHAR(40) NOT NULL DEFAULT 'boolean',
+  permission VARCHAR(40) NOT NULL DEFAULT 'read_write',
+  declaration VARCHAR(150) NOT NULL,
+  update_policy VARCHAR(40) NOT NULL DEFAULT 'on_change',
+  sync_enabled BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (thing_id, variable_name)
+);
+
+CREATE TABLE IF NOT EXISTS dashboards (
+  id SERIAL PRIMARY KEY,
+  owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  dashboard_name VARCHAR(150) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS dashboard_tiles (
+  id SERIAL PRIMARY KEY,
+  dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+  tile_name VARCHAR(150) NOT NULL,
+  tile_type VARCHAR(40) NOT NULL,
+  linked_thing_id INTEGER REFERENCES things(id) ON DELETE SET NULL,
+  linked_variable_id INTEGER REFERENCES thing_variables(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE devices
 ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
 
@@ -89,6 +133,36 @@ ADD COLUMN IF NOT EXISTS led_state VARCHAR(10) NOT NULL DEFAULT 'OFF';
 
 ALTER TABLE devices
 ADD COLUMN IF NOT EXISTS thing_variables JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE things
+ADD COLUMN IF NOT EXISTS device_sketch VARCHAR(200) NOT NULL DEFAULT 'uno_r4_wifi_cloud_device';
+
+ALTER TABLE things
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE thing_variables
+ADD COLUMN IF NOT EXISTS declaration VARCHAR(150) NOT NULL DEFAULT '';
+
+ALTER TABLE thing_variables
+ADD COLUMN IF NOT EXISTS update_policy VARCHAR(40) NOT NULL DEFAULT 'on_change';
+
+ALTER TABLE thing_variables
+ADD COLUMN IF NOT EXISTS sync_enabled BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE thing_variables
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE dashboards
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE dashboard_tiles
+ADD COLUMN IF NOT EXISTS linked_thing_id INTEGER REFERENCES things(id) ON DELETE SET NULL;
+
+ALTER TABLE dashboard_tiles
+ADD COLUMN IF NOT EXISTS linked_variable_id INTEGER REFERENCES thing_variables(id) ON DELETE SET NULL;
+
+ALTER TABLE dashboard_tiles
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 ALTER TABLE pending_user_registrations
 ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;

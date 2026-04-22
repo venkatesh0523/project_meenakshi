@@ -2,19 +2,29 @@ import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import DashboardAutoRefresh from "./DashboardAutoRefresh";
+import DashboardWidgetModal from "./DashboardWidgetModal";
 import LedToggleButton from "./LedToggleButton";
 import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
   addThingVariableForUser,
+  addDashboardTileForUser,
+  createDashboardForUser,
+  createThingForUser,
   deleteDeviceForUser,
   deleteThingForUser,
+  deleteThingVariableForUser,
   duplicateThingForUser,
+  getDashboardForUser,
   getDeviceForUser,
+  getThingForUser,
+  listDashboards,
   listDevices,
+  listThings,
   provisionDeviceForUser,
   renameThingForUser,
   saveDeviceWifiConfiguration,
-  setDeviceLedState,
+  setDeviceLedState
+  ,
   updateThingVariableForUser
 } from "../lib/devices";
 import {
@@ -115,6 +125,21 @@ const builderSections = [
   { id: "templates", label: "Templates" }
 ];
 
+const builderSidebarGroups = [
+  {
+    label: "Home",
+    items: [{ id: "home", label: "Home", sectionId: "devices" }]
+  },
+  {
+    label: "IoT Builder",
+    items: builderSections.map((section) => ({
+      id: section.id,
+      label: section.label,
+      sectionId: section.id
+    }))
+  }
+];
+
 function getBuilderSection(value) {
   return builderSections.some((section) => section.id === value) ? value : "devices";
 }
@@ -126,33 +151,22 @@ function buildBuilderLink(sectionId, selectedDevice = "") {
   });
 }
 
-function buildThingVariableLink(deviceId, variableName = "") {
+function buildThingPageLink(thingId = "") {
   return buildRedirect("/", {
     builder: "things",
-    selectedDevice: deviceId,
-    selectedVariable: variableName
+    thingId
   });
 }
 
-function normalizeThingVariable(variable) {
-  const name = typeof variable?.name === "string" && variable.name.trim() ? variable.name.trim() : "unnamed_variable";
-  const rawType = typeof variable?.type === "string" ? variable.type.trim().toLowerCase() : "boolean";
-  const rawPermission = typeof variable?.permission === "string" ? variable.permission.trim().toLowerCase() : "read_write";
-  const rawUpdatePolicy =
-    typeof variable?.updatePolicy === "string" ? variable.updatePolicy.trim().toLowerCase() : "on_change";
-
-  return {
-    name,
-    declaration:
-      typeof variable?.declaration === "string" && variable.declaration.trim() ? variable.declaration.trim() : name,
-    type: rawType,
-    permission: rawPermission === "readwrite" ? "read_write" : rawPermission === "readonly" ? "read_only" : rawPermission,
-    updatePolicy: rawUpdatePolicy === "onchange" ? "on_change" : rawUpdatePolicy,
-    syncEnabled: Boolean(variable?.syncEnabled)
-  };
+function buildDashboardPageLink(dashboardId = "", mode = "") {
+  return buildRedirect("/", {
+    builder: "dashboards",
+    dashboardId,
+    mode
+  });
 }
 
-function formatVariableLabel(value) {
+function formatDashboardTileTypeLabel(value) {
   return value
     .split("_")
     .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1)}` : part))
@@ -427,23 +441,22 @@ async function addThingVariable(formData) {
   "use server";
 
   const user = await requireUser();
-  const deviceId = normalizeField(formData.get("deviceId"));
+  const thingId = normalizeField(formData.get("thingId"));
   const variableName = normalizeField(formData.get("variableName"));
   const variableType = normalizeField(formData.get("variableType")) || "boolean";
   const permission = normalizeField(formData.get("permission")) || "read_write";
 
-  if (!deviceId || !variableName) {
+  if (!thingId || !variableName) {
     redirect(
       buildRedirect("/", {
         builder: "things",
-        authError: "Enter a variable name.",
-        selectedDevice: deviceId
+        authError: "Enter a variable name."
       })
     );
   }
 
   const result = await addThingVariableForUser({
-    deviceId,
+    thingId: Number(thingId),
     userId: user.id,
     variableName,
     variableType,
@@ -457,133 +470,157 @@ async function addThingVariable(formData) {
         authError:
           result.reason === "duplicate-variable"
             ? `Variable ${variableName} already exists for this thing.`
-            : "That thing is not connected to your account.",
-        selectedDevice: deviceId
+            : "That thing is not connected to your account."
       })
     );
   }
 
   revalidatePath("/");
-  redirect(
-    buildRedirect("/", {
-      builder: "things",
-      authMessage: `Variable ${variableName} created.`,
-      selectedDevice: deviceId
-    })
-  );
+  redirect(buildRedirect("/", { builder: "things", thingId, authMessage: `Variable ${variableName} created.` }));
+}
+
+async function createThing(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const thingName = normalizeField(formData.get("thingName"));
+  const deviceSketch = normalizeField(formData.get("deviceSketch")) || "uno_r4_wifi_cloud_device";
+  const deviceId = normalizeField(formData.get("deviceId"));
+
+  if (!thingName) {
+    redirect(buildRedirect("/", { builder: "things", authError: "Enter a thing name." }));
+  }
+
+  const result = await createThingForUser({
+    userId: user.id,
+    thingName,
+    deviceSketch,
+    deviceId
+  });
+
+  if (!result.ok) {
+    const message =
+      result.reason === "duplicate-device-link"
+        ? "That device is already linked to another thing."
+        : "Choose a valid device or create the thing without linking a device yet.";
+
+    redirect(buildRedirect("/", { builder: "things", authError: message }));
+  }
+
+  revalidatePath("/");
+  redirect(buildRedirect("/", { builder: "things", thingId: result.thing?.id, authMessage: `Thing ${thingName} created.` }));
 }
 
 async function updateThingVariable(formData) {
   "use server";
 
   const user = await requireUser();
-  const deviceId = normalizeField(formData.get("deviceId"));
-  const originalVariableName = normalizeField(formData.get("originalVariableName"));
+  const thingId = normalizeField(formData.get("thingId"));
+  const variableId = normalizeField(formData.get("variableId"));
   const variableName = normalizeField(formData.get("variableName"));
   const variableType = normalizeField(formData.get("variableType")) || "boolean";
   const permission = normalizeField(formData.get("permission")) || "read_write";
-  const updatePolicy = normalizeField(formData.get("updatePolicy")) || "on_change";
-  const syncEnabled = formData.get("syncEnabled") === "true";
 
-  if (!deviceId || !originalVariableName || !variableName) {
-    redirect(
-      buildRedirect("/", {
-        builder: "things",
-        authError: "Choose a thing variable to update.",
-        selectedDevice: deviceId,
-        selectedVariable: originalVariableName
-      })
-    );
+  if (!thingId || !variableId || !variableName) {
+    redirect(buildRedirect("/", { builder: "things", thingId, authError: "Choose a valid variable." }));
   }
 
   const result = await updateThingVariableForUser({
-    deviceId,
+    variableId: Number(variableId),
+    thingId: Number(thingId),
     userId: user.id,
-    originalVariableName,
     variableName,
     variableType,
-    permission,
-    updatePolicy,
-    syncEnabled
+    permission
   });
 
   if (!result.ok) {
     const message =
       result.reason === "duplicate-variable"
         ? `Variable ${variableName} already exists for this thing.`
-        : "Unable to update the variable properties.";
+        : "Unable to update the variable.";
 
-    redirect(
-      buildRedirect("/", {
-        builder: "things",
-        authError: message,
-        selectedDevice: deviceId,
-        selectedVariable: originalVariableName
-      })
-    );
+    redirect(buildRedirect("/", { builder: "things", thingId, authError: message }));
   }
 
   revalidatePath("/");
-  redirect(
-    buildRedirect("/", {
-      builder: "things",
-      authMessage: `Variable ${variableName} updated.`,
-      selectedDevice: deviceId,
-      selectedVariable: variableName
-    })
-  );
+  redirect(buildRedirect("/", { builder: "things", thingId, authMessage: `Variable ${variableName} updated.` }));
+}
+
+async function deleteThingVariable(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const thingId = normalizeField(formData.get("thingId"));
+  const variableId = normalizeField(formData.get("variableId"));
+
+  if (!thingId || !variableId) {
+    redirect(buildRedirect("/", { builder: "things", thingId, authError: "Variable not found." }));
+  }
+
+  const deleted = await deleteThingVariableForUser({
+    variableId: Number(variableId),
+    thingId: Number(thingId),
+    userId: user.id
+  });
+
+  if (!deleted) {
+    redirect(buildRedirect("/", { builder: "things", thingId, authError: "Unable to delete the variable." }));
+  }
+
+  revalidatePath("/");
+  redirect(buildRedirect("/", { builder: "things", thingId, authMessage: "Variable deleted." }));
 }
 
 async function renameThing(formData) {
   "use server";
 
   const user = await requireUser();
-  const deviceId = normalizeField(formData.get("deviceId"));
+  const thingId = normalizeField(formData.get("thingId"));
   const thingName = normalizeField(formData.get("thingName"));
 
-  if (!deviceId || !thingName) {
-    redirect(buildRedirect("/", { builder: "things", authError: "Enter a thing name.", selectedDevice: deviceId }));
+  if (!thingId || !thingName) {
+    redirect(buildRedirect("/", { builder: "things", authError: "Enter a thing name." }));
   }
 
   const renamed = await renameThingForUser({
-    deviceId,
+    deviceId: Number(thingId),
     userId: user.id,
     thingName
   });
 
   if (!renamed) {
-    redirect(buildRedirect("/", { builder: "things", authError: "Thing not found.", selectedDevice: deviceId }));
+    redirect(buildRedirect("/", { builder: "things", authError: "Thing not found." }));
   }
 
   revalidatePath("/");
-  redirect(buildRedirect("/", { builder: "things", authMessage: `Thing renamed to ${thingName}.`, selectedDevice: deviceId }));
+  redirect(buildRedirect("/", { builder: "things", authMessage: `Thing renamed to ${thingName}.` }));
 }
 
 async function duplicateThing(formData) {
   "use server";
 
   const user = await requireUser();
-  const deviceId = normalizeField(formData.get("deviceId"));
+  const thingId = normalizeField(formData.get("thingId"));
 
-  if (!deviceId) {
+  if (!thingId) {
     redirect(buildRedirect("/", { builder: "things", authError: "Thing not found." }));
   }
 
   const duplicate = await duplicateThingForUser({
-    deviceId,
+    thingId: Number(thingId),
     userId: user.id
   });
 
   if (!duplicate) {
-    redirect(buildRedirect("/", { builder: "things", authError: "Unable to duplicate thing.", selectedDevice: deviceId }));
+    redirect(buildRedirect("/", { builder: "things", authError: "Unable to duplicate thing." }));
   }
 
   revalidatePath("/");
   redirect(
     buildRedirect("/", {
       builder: "things",
-      authMessage: `Thing duplicated as ${duplicate.thing_name}.`,
-      selectedDevice: duplicate.device_id
+      authMessage: `Thing duplicated as ${duplicate.thing_name}.`
     })
   );
 }
@@ -592,23 +629,90 @@ async function deleteThing(formData) {
   "use server";
 
   const user = await requireUser();
-  const deviceId = normalizeField(formData.get("deviceId"));
+  const thingId = normalizeField(formData.get("thingId"));
 
-  if (!deviceId) {
+  if (!thingId) {
     redirect(buildRedirect("/", { builder: "things", authError: "Thing not found." }));
   }
 
   const deleted = await deleteThingForUser({
-    deviceId,
+    thingId: Number(thingId),
     userId: user.id
   });
 
   if (!deleted) {
-    redirect(buildRedirect("/", { builder: "things", authError: "Unable to delete thing.", selectedDevice: deviceId }));
+    redirect(buildRedirect("/", { builder: "things", authError: "Unable to delete thing." }));
   }
 
   revalidatePath("/");
   redirect(buildRedirect("/", { builder: "things", authMessage: `Thing deleted.` }));
+}
+
+async function createDashboard(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const dashboardName = normalizeField(formData.get("dashboardName"));
+
+  if (!dashboardName) {
+    redirect(buildRedirect("/", { builder: "dashboards", authError: "Enter a dashboard name." }));
+  }
+
+  const dashboard = await createDashboardForUser({
+    userId: user.id,
+    dashboardName
+  });
+
+  revalidatePath("/");
+  redirect(
+    buildRedirect("/", {
+      builder: "dashboards",
+      dashboardId: dashboard?.id,
+      authMessage: `Dashboard ${dashboardName} created.`
+    })
+  );
+}
+
+async function addDashboardTile(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const dashboardId = normalizeField(formData.get("dashboardId"));
+  const tileName = normalizeField(formData.get("tileName"));
+  const tileType = normalizeField(formData.get("tileType")) || "value";
+  const linkedThingId = normalizeField(formData.get("linkedThingId"));
+  const linkedVariableId = normalizeField(formData.get("linkedVariableId"));
+
+  if (!dashboardId || !tileName || !linkedThingId || !linkedVariableId) {
+    redirect(
+      buildRedirect("/", {
+        builder: "dashboards",
+        dashboardId,
+        authError: "Choose a dashboard tile name and link it to a variable."
+      })
+    );
+  }
+
+  const result = await addDashboardTileForUser({
+    dashboardId: Number(dashboardId),
+    userId: user.id,
+    tileName,
+    tileType,
+    linkedThingId: Number(linkedThingId),
+    linkedVariableId: Number(linkedVariableId)
+  });
+
+  if (!result.ok) {
+    const message =
+      result.reason === "missing-dashboard"
+        ? "Dashboard not found."
+        : "Choose a valid thing variable to link.";
+
+    redirect(buildRedirect("/", { builder: "dashboards", dashboardId, authError: message }));
+  }
+
+  revalidatePath("/");
+  redirect(buildRedirect("/", { builder: "dashboards", dashboardId, authMessage: `Tile ${tileName} added.` }));
 }
 
 export default async function HomePage({ searchParams }) {
@@ -619,22 +723,34 @@ export default async function HomePage({ searchParams }) {
   const authView = searchParams?.authView || "login";
   const builderSection = getBuilderSection(searchParams?.builder || "devices");
   const selectedDevice = searchParams?.selectedDevice || "";
-  const selectedVariable = searchParams?.selectedVariable || "";
+  const selectedThingId = searchParams?.thingId || "";
+  const selectedDashboardId = searchParams?.dashboardId || "";
+  const dashboardMode = searchParams?.mode === "edit" ? "edit" : "view";
   const devices = user ? await listDevices(user.id) : [];
+  const things = user ? await listThings(user.id) : [];
+  const dashboards = user ? await listDashboards(user.id) : [];
+  const selectedThing =
+    user && selectedThingId ? await getThingForUser(Number(selectedThingId), user.id) : null;
+  const selectedDashboard =
+    user && selectedDashboardId ? await getDashboardForUser(Number(selectedDashboardId), user.id) : null;
   const visibleDevices = selectedDevice
     ? devices.filter((device) => device.device_id === selectedDevice)
     : devices;
   const deviceCount = devices.length;
   const onlineCount = devices.filter((device) => getDeviceConnectionState(device).isOnline).length;
-  const thingItems = devices.map((device) => ({
-    ...device,
-    thingName: `${device.device_name} Thing`,
-    variables: Array.isArray(device.thing_variables) ? device.thing_variables.map(normalizeThingVariable) : []
+  const thingItems = things.map((thing) => ({
+    ...thing,
+    variables: Array.isArray(thing.variables) ? thing.variables : []
   }));
-  const selectedThing =
-    (selectedDevice ? thingItems.find((thing) => thing.device_id === selectedDevice) : null) || thingItems[0] || null;
-  const selectedThingVariable =
-    selectedThing?.variables.find((variable) => variable.name === selectedVariable) || selectedThing?.variables[0] || null;
+  const showThingLanding = builderSection === "things" && !selectedThing && thingItems.length === 0;
+  const variableOptions = thingItems.flatMap((thing) =>
+    thing.variables.map((variable) => ({
+      thingId: thing.thing_id,
+      thingName: thing.thing_name,
+      variableId: variable.id,
+      variableName: variable.name
+    }))
+  );
 
   return (
     <main className="page">
@@ -693,21 +809,43 @@ export default async function HomePage({ searchParams }) {
               <DashboardAutoRefresh />
               <div className="builderLayout">
                 <aside className="builderSidebar">
-                  <div className="builderSidebarHeader">
-                    <p className="authKicker">IoT Builder</p>
-                    <strong>{user.full_name}</strong>
+                  <div className="builderSidebarProfile">
+                    <div className="builderSidebarAvatar">
+                      {user.full_name?.slice(0, 1)?.toUpperCase() || "U"}
+                    </div>
+                    <div className="builderSidebarProfileText">
+                      <strong>{user.full_name}</strong>
+                      <span>{user.email}</span>
+                    </div>
                   </div>
-                  <nav className="builderNav">
-                    {builderSections.map((section) => (
-                      <a
-                        key={section.id}
-                        className={`builderNavItem ${builderSection === section.id ? "builderNavItemActive" : ""}`}
-                        href={buildBuilderLink(section.id, selectedDevice)}
-                      >
-                        {section.label}
-                      </a>
+                  <div className="builderSidebarSections">
+                    {builderSidebarGroups.map((group) => (
+                      <div className="builderSidebarGroup" key={group.label}>
+                        <div className="builderSidebarGroupHeader">
+                          <span>{group.label}</span>
+                          {group.label === "IoT Builder" ? <span className="builderSidebarChevron">▾</span> : null}
+                        </div>
+                        <nav className="builderNav">
+                          {group.items.map((item) =>
+                            item.disabled ? (
+                              <span className="builderNavItem builderNavItemDisabled" key={item.id}>
+                                {item.label}
+                              </span>
+                            ) : (
+                              <a
+                                key={item.id}
+                                className={`builderNavItem ${builderSection === item.sectionId ? "builderNavItemActive" : ""}`}
+                                href={buildBuilderLink(item.sectionId, selectedDevice)}
+                              >
+                                <span>{item.label}</span>
+                                {item.sectionId === "things" ? <span className="builderNavItemPlus">+</span> : null}
+                              </a>
+                            )
+                          )}
+                        </nav>
+                      </div>
                     ))}
-                  </nav>
+                  </div>
                   <form action={logoutUser} className="builderSidebarFooter">
                     <button className="button buttonGhost" type="submit">
                       Logout
@@ -735,240 +873,309 @@ export default async function HomePage({ searchParams }) {
 
                   {builderSection === "things" ? (
                     <div className="builderSection stackCompact">
-                      {thingItems.length > 0 && selectedThing ? (
-                        <div className="thingEditorLayout">
-                          <aside className="thingNavigator">
-                            <div className="historyCard">
-                              <strong>Things</strong>
-                              <p className="sectionCopy">Pick a thing to edit its sketch and variable properties.</p>
+                      {selectedThing ? (
+                        <div className="thingDetailPage">
+                          <div className="sectionHeader">
+                            <div>
+                              <strong>{selectedThing.thing_name}</strong>
+                              <p className="sectionCopy">Add, edit, and delete variables for this Thing.</p>
                             </div>
-                            <div className="thingsList">
-                              {thingItems.map((thing) => {
-                                const connection = getDeviceConnectionState(thing);
-                                const isActive = thing.device_id === selectedThing.device_id;
+                            <a className="button buttonGhost" href={buildThingPageLink()}>
+                              Back To Things
+                            </a>
+                          </div>
 
-                                return (
-                                  <a
-                                    key={thing.device_id}
-                                    className={`thingListItem ${isActive ? "thingListItemActive" : ""}`}
-                                    href={buildThingVariableLink(thing.device_id)}
-                                  >
-                                    <div>
-                                      <p className="authKicker">Thing</p>
-                                      <strong>{thing.thing_name || thing.thingName}</strong>
-                                    </div>
-                                    <span className={`chip ${connection.isOnline ? "chipOnline" : "chipOffline"}`}>
-                                      {connection.label}
-                                    </span>
-                                  </a>
-                                );
-                              })}
+                          <article className="thingCard">
+                            <div className="thingRowGrid">
+                              <div className="thingRowCell">
+                                <span>Thing Name</span>
+                                <strong>{selectedThing.thing_name}</strong>
+                              </div>
+                              <div className="thingRowCell">
+                                <span>Device Sketch</span>
+                                <code>{selectedThing.device_sketch || "uno_r4_wifi_cloud_device"}</code>
+                              </div>
+                              <div className="thingRowCell">
+                                <span>Last Modified</span>
+                                <strong>{formatDeviceDate(selectedThing.updated_at)}</strong>
+                              </div>
+                              <div className="thingRowCell">
+                                <span>Creation Date</span>
+                                <strong>{formatDeviceDate(selectedThing.created_at)}</strong>
+                              </div>
                             </div>
-                          </aside>
 
-                          <div className="thingEditorContent">
-                            <article className="thingCard">
-                              <div className="thingHeader">
-                                <div>
-                                  <p className="authKicker">Thing</p>
-                                  <strong>{selectedThing.thing_name || selectedThing.thingName}</strong>
-                                </div>
-                                <details className="thingMenu">
-                                  <summary className="thingMenuButton">...</summary>
-                                  <div className="thingMenuPanel">
-                                    <form action={renameThing} className="thingActionForm">
-                                      <input type="hidden" name="deviceId" value={selectedThing.device_id} />
-                                      <input
-                                        className="input"
-                                        name="thingName"
-                                        defaultValue={selectedThing.thing_name || selectedThing.thingName}
-                                        required
-                                      />
-                                      <button className="button buttonGhost" type="submit">
-                                        Rename
-                                      </button>
-                                    </form>
-                                    <form action={duplicateThing}>
-                                      <input type="hidden" name="deviceId" value={selectedThing.device_id} />
-                                      <button className="button buttonGhost" type="submit">
-                                        Duplicate
-                                      </button>
-                                    </form>
-                                    <form action={deleteThing}>
-                                      <input type="hidden" name="deviceId" value={selectedThing.device_id} />
-                                      <button className="button buttonDanger" type="submit">
-                                        Delete
-                                      </button>
-                                    </form>
-                                  </div>
-                                </details>
+                            <div className="thingVariableSection">
+                              <div className="thingVariableSectionHeader">
+                                <strong>Variables</strong>
+                                <span>{selectedThing.variables?.length || 0} saved</span>
                               </div>
 
-                              <div className="thingSectionTabs">
-                                <span className="thingSectionTab thingSectionTabActive">Data</span>
-                                <span className="thingSectionTab">Sketch</span>
-                              </div>
+                              <form action={addThingVariable} className="thingVariableForm">
+                                <input type="hidden" name="thingId" value={selectedThing.thing_id} />
+                                <input className="input" name="variableName" placeholder="ledon_red" required />
+                                <select className="input" name="variableType" defaultValue="boolean">
+                                  <option value="boolean">Boolean</option>
+                                  <option value="number">Number</option>
+                                  <option value="string">String</option>
+                                </select>
+                                <select className="input" name="permission" defaultValue="read_write">
+                                  <option value="read_write">Read Write</option>
+                                  <option value="read_only">Read Only</option>
+                                </select>
+                                <button className="button buttonOn" type="submit">
+                                  Add Variable
+                                </button>
+                              </form>
 
-                              <div className="thingMetaGrid">
-                                <div className="thingMetaRow">
-                                  <span>Thing Name</span>
-                                  <strong>{selectedThing.thing_name || selectedThing.thingName}</strong>
-                                </div>
-                                <div className="thingMetaRow">
-                                  <span>Device Sketch</span>
-                                  <code>{selectedThing.device_sketch || "uno_r4_wifi_cloud_device"}</code>
-                                </div>
-                                <div className="thingMetaRow">
-                                  <span>Last Modified</span>
-                                  <strong>{formatDeviceDate(selectedThing.thing_updated_at || selectedThing.created_at)}</strong>
-                                </div>
-                                <div className="thingMetaRow">
-                                  <span>Creation Date</span>
-                                  <strong>{formatDeviceDate(selectedThing.thing_created_at || selectedThing.created_at)}</strong>
-                                </div>
-                              </div>
-
-                              <div className="thingSketchCard">
-                                <div>
-                                  <p className="authKicker">Sketch</p>
-                                  <strong>{selectedThing.device_sketch || "uno_r4_wifi_cloud_device"}</strong>
-                                </div>
-                                <p className="builderCardCopy">
-                                  This thing is linked to the Arduino sketch running on {selectedThing.device_name}.
-                                </p>
-                              </div>
-
-                              <div className="thingDataLayout">
-                                <section className="thingVariablesPanel">
-                                  <div className="thingPanelHeader">
-                                    <div>
-                                      <strong>Variables</strong>
-                                      <p className="sectionCopy">
-                                        Define the data your Thing exchanges with the device and shows on dashboards.
-                                      </p>
-                                    </div>
-                                  </div>
-
-                                  <div className="thingVariableList">
-                                    {selectedThing.variables.length > 0 ? (
-                                      selectedThing.variables.map((item) => (
-                                        <a
-                                          key={item.name}
-                                          className={`thingVariableItem ${
-                                            selectedThingVariable?.name === item.name ? "thingVariableItemActive" : ""
-                                          }`}
-                                          href={buildThingVariableLink(selectedThing.device_id, item.name)}
-                                        >
-                                          <strong>{item.name}</strong>
-                                          <span>{formatVariableLabel(item.type)}</span>
-                                        </a>
-                                      ))
-                                    ) : (
-                                      <div className="builderMiniPill">No variables yet</div>
-                                    )}
-                                  </div>
-
-                                  <form action={addThingVariable} className="thingVariableForm">
-                                    <input type="hidden" name="deviceId" value={selectedThing.device_id} />
-                                    <input className="input" name="variableName" placeholder="ledon_red" required />
-                                    <select className="input" name="variableType" defaultValue="boolean">
-                                      <option value="boolean">Boolean</option>
-                                      <option value="number">Number</option>
-                                      <option value="string">String</option>
-                                    </select>
-                                    <select className="input" name="permission" defaultValue="read_write">
-                                      <option value="read_write">Read Write</option>
-                                      <option value="read_only">Read Only</option>
-                                    </select>
-                                    <button className="button buttonOn" type="submit">
-                                      Add Variable
-                                    </button>
-                                  </form>
-                                </section>
-
-                                <section className="thingVariableDetails">
-                                  <div className="thingPanelHeader">
-                                    <div>
-                                      <strong>Variable Properties</strong>
-                                      <p className="sectionCopy">Edit how the selected variable syncs with your Arduino and dashboards.</p>
-                                    </div>
-                                  </div>
-
-                                  {selectedThingVariable ? (
-                                    <form action={updateThingVariable} className="thingVariableDetailsForm">
-                                      <input type="hidden" name="deviceId" value={selectedThing.device_id} />
-                                      <input type="hidden" name="originalVariableName" value={selectedThingVariable.name} />
-
-                                      <label className="thingField">
-                                        <span>Declaration</span>
-                                        <input
-                                          className="input"
-                                          name="variableName"
-                                          defaultValue={selectedThingVariable.declaration}
-                                          required
-                                        />
-                                      </label>
-
-                                      <label className="thingField">
-                                        <span>Variable Type</span>
-                                        <select className="input" name="variableType" defaultValue={selectedThingVariable.type}>
+                              {selectedThing.variables?.length ? (
+                                <div className="thingVariableEditorList">
+                                  {selectedThing.variables.map((variable) => (
+                                    <article className="thingVariableEditorCard" key={variable.id}>
+                                      <form action={updateThingVariable} className="thingVariableEditForm">
+                                        <input type="hidden" name="thingId" value={selectedThing.thing_id} />
+                                        <input type="hidden" name="variableId" value={variable.id} />
+                                        <input className="input" name="variableName" defaultValue={variable.name} required />
+                                        <select className="input" name="variableType" defaultValue={variable.type}>
                                           <option value="boolean">Boolean</option>
                                           <option value="number">Number</option>
                                           <option value="string">String</option>
                                         </select>
-                                      </label>
-
-                                      <label className="thingField">
-                                        <span>Variable Permission</span>
-                                        <select className="input" name="permission" defaultValue={selectedThingVariable.permission}>
-                                          <option value="read_write">READ_WRITE</option>
-                                          <option value="read_only">READ_ONLY</option>
+                                        <select className="input" name="permission" defaultValue={variable.permission}>
+                                          <option value="read_write">Read Write</option>
+                                          <option value="read_only">Read Only</option>
                                         </select>
-                                      </label>
-
-                                      <label className="thingField">
-                                        <span>Variable Update Policy</span>
-                                        <select className="input" name="updatePolicy" defaultValue={selectedThingVariable.updatePolicy}>
-                                          <option value="on_change">ON_CHANGE</option>
-                                          <option value="periodic">PERIODIC</option>
-                                        </select>
-                                      </label>
-
-                                      <label className="thingToggleField">
-                                        <input
-                                          type="checkbox"
-                                          name="syncEnabled"
-                                          value="true"
-                                          defaultChecked={selectedThingVariable.syncEnabled}
-                                        />
-                                        <div>
-                                          <strong>Sync with other Things</strong>
-                                          <span>
-                                            Sync this variable with others of the same type across different Things.
-                                          </span>
-                                        </div>
-                                      </label>
-
-                                      <button className="button buttonOn" type="submit">
-                                        Save Variable
-                                      </button>
-                                    </form>
-                                  ) : (
-                                    <div className="historyCard">
-                                      <strong>No variable selected</strong>
-                                      <p className="sectionCopy">Add a variable to start editing its properties.</p>
-                                    </div>
-                                  )}
-                                </section>
-                              </div>
-                            </article>
-                          </div>
+                                        <button className="button buttonGhost" type="submit">
+                                          Save
+                                        </button>
+                                      </form>
+                                      <form action={deleteThingVariable}>
+                                        <input type="hidden" name="thingId" value={selectedThing.thing_id} />
+                                        <input type="hidden" name="variableId" value={variable.id} />
+                                        <button className="button buttonDanger" type="submit">
+                                          Delete Variable
+                                        </button>
+                                      </form>
+                                    </article>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="historyCard">
+                                  <strong>No variables yet</strong>
+                                  <p className="sectionCopy">Add your first variable for this Thing.</p>
+                                </div>
+                              )}
+                            </div>
+                          </article>
                         </div>
                       ) : (
-                        <div className="historyCard">
-                          <strong>No things yet</strong>
-                          <p className="sectionCopy">Create a device in Devices to automatically create its first thing.</p>
-                        </div>
+                        <>
+                          {showThingLanding ? (
+                            <section className="thingLanding">
+                              <div className="thingLandingHero">
+                                <p className="thingLandingEyebrow">Things</p>
+                                <h2>Create a new Thing in Arduino Cloud</h2>
+                                <p className="thingLandingCopy">
+                                  Follow these simple steps to create your first Thing and connect variables,
+                                  sketch, and metadata to your Arduino device.
+                                </p>
+                              </div>
+
+                              <div className="thingLandingSteps">
+                                <article className="thingLandingStep">
+                                  <div className="thingLandingIllustration thingLandingIllustrationWindow">
+                                    <span className="thingLandingWindowBar" />
+                                    <span className="thingLandingChip" />
+                                    <span className="thingLandingDashed" />
+                                  </div>
+                                  <strong>Create a Thing</strong>
+                                  <p>
+                                    A Thing is a virtual entity that lets you link your physical device to the Cloud:
+                                    it includes variables, sketch and metadata.
+                                  </p>
+                                </article>
+
+                                <article className="thingLandingStep">
+                                  <div className="thingLandingIllustration thingLandingIllustrationNetwork">
+                                    <span className="thingLandingNode thingLandingNodeLarge" />
+                                    <span className="thingLandingNode thingLandingNodeSmall" />
+                                    <span className="thingLandingNode thingLandingNodeWifi" />
+                                  </div>
+                                  <strong>Associate Device and Network</strong>
+                                  <p>
+                                    Select the device you want to use and enter your network credentials so you can
+                                    send and receive data remotely.
+                                  </p>
+                                </article>
+
+                                <article className="thingLandingStep">
+                                  <div className="thingLandingIllustration thingLandingIllustrationCode">
+                                    <span className="thingLandingNode thingLandingNodeLarge" />
+                                    <span className="thingLandingNode thingLandingNodeCode" />
+                                  </div>
+                                  <strong>Start creating</strong>
+                                  <p>
+                                    Add Cloud Variables that are included in the sketch and used to exchange data
+                                    with the Cloud.
+                                  </p>
+                                </article>
+                              </div>
+
+                              <details className="thingCreateDisclosure">
+                                <summary className="thingLandingCta">+ Create Thing</summary>
+                                <div className="thingCreatePanel">
+                                  <form action={createThing} className="createThingForm createThingFormLanding">
+                                    <input className="input" name="thingName" placeholder="Greenhouse Thing" required />
+                                    <input
+                                      className="input"
+                                      name="deviceSketch"
+                                      placeholder="uno_r4_wifi_cloud_device"
+                                      defaultValue="uno_r4_wifi_cloud_device"
+                                    />
+                                    <select className="input" name="deviceId" defaultValue="">
+                                      <option value="">No device linked yet</option>
+                                      {devices.map((device) => (
+                                        <option key={device.device_id} value={device.device_id}>
+                                          {device.device_name} ({device.device_id})
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <button className="button buttonOn" type="submit">
+                                      Create Thing
+                                    </button>
+                                  </form>
+                                </div>
+                              </details>
+                            </section>
+                          ) : (
+                            <>
+                              <div className="historyCard">
+                                <strong>Create Thing</strong>
+                                <p className="sectionCopy">
+                                  A Thing is a virtual entity that links variables, sketch, and metadata in the Cloud.
+                                </p>
+                                <form action={createThing} className="createThingForm">
+                                  <input className="input" name="thingName" placeholder="Greenhouse Thing" required />
+                                  <input
+                                    className="input"
+                                    name="deviceSketch"
+                                    placeholder="uno_r4_wifi_cloud_device"
+                                    defaultValue="uno_r4_wifi_cloud_device"
+                                  />
+                                  <select className="input" name="deviceId" defaultValue="">
+                                    <option value="">No device linked yet</option>
+                                    {devices.map((device) => (
+                                      <option key={device.device_id} value={device.device_id}>
+                                        {device.device_name} ({device.device_id})
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button className="button buttonOn" type="submit">
+                                    Create Thing
+                                  </button>
+                                </form>
+                              </div>
+
+                              <div className="thingsList">
+                                {thingItems.map((thing) => (
+                                  <article className="thingRow" key={thing.thing_id}>
+                                    <div className="thingRowHeader">
+                                      <div className="thingRowGrid">
+                                        <div className="thingRowCell">
+                                          <span>Thing Name</span>
+                                          <strong>
+                                            <a className="thingRowLink" href={buildThingPageLink(thing.thing_id)}>
+                                              {thing.thing_name}
+                                            </a>
+                                          </strong>
+                                        </div>
+                                        <div className="thingRowCell">
+                                          <span>Device Sketch</span>
+                                          <code>{thing.device_sketch || "uno_r4_wifi_cloud_device"}</code>
+                                        </div>
+                                        <div className="thingRowCell">
+                                          <span>Last Modified</span>
+                                          <strong>{formatDeviceDate(thing.updated_at)}</strong>
+                                        </div>
+                                        <div className="thingRowCell">
+                                          <span>Creation Date</span>
+                                          <strong>{formatDeviceDate(thing.created_at)}</strong>
+                                        </div>
+                                      </div>
+
+                                      <details className="thingMenu">
+                                        <summary className="thingMenuButton">...</summary>
+                                        <div className="thingMenuPanel">
+                                          <form action={renameThing} className="thingActionForm">
+                                            <input type="hidden" name="thingId" value={thing.thing_id} />
+                                            <input className="input" name="thingName" defaultValue={thing.thing_name} required />
+                                            <button className="button buttonGhost" type="submit">
+                                              Rename
+                                            </button>
+                                          </form>
+                                          <form action={duplicateThing}>
+                                            <input type="hidden" name="thingId" value={thing.thing_id} />
+                                            <button className="button buttonGhost" type="submit">
+                                              Duplicate
+                                            </button>
+                                          </form>
+                                          <form action={deleteThing}>
+                                            <input type="hidden" name="thingId" value={thing.thing_id} />
+                                            <button className="button buttonDanger" type="submit">
+                                              Delete
+                                            </button>
+                                          </form>
+                                        </div>
+                                      </details>
+                                    </div>
+
+                                    <div className="thingVariableSection">
+                                      <div className="thingVariableSectionHeader">
+                                        <strong>Variables</strong>
+                                        <span>{thing.variables.length} saved</span>
+                                      </div>
+
+                                      <div className="thingRowActions">
+                                        <a className="button buttonGhost" href={buildThingPageLink(thing.thing_id)}>
+                                          Edit Variables
+                                        </a>
+                                      </div>
+
+                                      <div className="builderPillRow">
+                                        {thing.variables.length > 0 ? (
+                                          thing.variables.map((variable) => (
+                                            <span className="builderMiniPill" key={variable.id || variable.name}>
+                                              {variable.name} · {variable.type}
+                                            </span>
+                                          ))
+                                        ) : (
+                                          <span className="builderMiniPill">No variables yet</span>
+                                        )}
+                                      </div>
+
+                                      <form action={addThingVariable} className="thingVariableForm">
+                                        <input type="hidden" name="thingId" value={thing.thing_id} />
+                                        <input className="input" name="variableName" placeholder="ledon_red" required />
+                                        <select className="input" name="variableType" defaultValue="boolean">
+                                          <option value="boolean">Boolean</option>
+                                          <option value="number">Number</option>
+                                          <option value="string">String</option>
+                                        </select>
+                                        <select className="input" name="permission" defaultValue="read_write">
+                                          <option value="read_write">Read Write</option>
+                                          <option value="read_only">Read Only</option>
+                                        </select>
+                                        <button className="button buttonOn" type="submit">
+                                          Add Variable
+                                        </button>
+                                      </form>
+                                    </div>
+                                  </article>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </>
                       )}
                     </div>
                   ) : null}
@@ -1069,32 +1276,145 @@ export default async function HomePage({ searchParams }) {
 
                   {builderSection === "dashboards" ? (
                     <div className="builderSection stackCompact">
-                      <div className="historyCard">
-                        <strong>Dashboards</strong>
-                        <p className="sectionCopy">Arrange live telemetry, LED state, and connection status into operator views.</p>
-                      </div>
-                      <div className="builderGrid">
-                        <article className="builderCard">
-                          <div className="builderCardTop">
-                            <div>
-                              <p className="authKicker">Dashboard</p>
-                              <strong>Greenhouse Overview</strong>
+                      {selectedDashboard ? (
+                        <div className="dashboardDetailPage">
+                          <div className="dashboardCanvasHeader">
+                            <div className="dashboardBreadcrumbs">
+                              <a href={buildDashboardPageLink()}>Dashboards</a>
+                              <span>/</span>
+                              <strong>{selectedDashboard.dashboard_name}</strong>
                             </div>
-                            <span className="chip chipOnline">Live</span>
-                          </div>
-                          <p className="builderCardCopy">Track online devices, current LED state, and network health from one screen.</p>
-                        </article>
-                        <article className="builderCard">
-                          <div className="builderCardTop">
-                            <div>
-                              <p className="authKicker">Dashboard</p>
-                              <strong>Device Control</strong>
+                            <div className="sectionActions">
+                              {dashboardMode === "edit" ? (
+                                <a className="dashboardDoneButton" href={buildDashboardPageLink(selectedDashboard.id, "view")}>
+                                  Done
+                                </a>
+                              ) : (
+                                <a className="dashboardEditButton" href={buildDashboardPageLink(selectedDashboard.id, "edit")}>
+                                  Edit
+                                </a>
+                              )}
                             </div>
-                            <span className="chip">Draft</span>
                           </div>
-                          <p className="builderCardCopy">A focused control layout for switching GPIO outputs and reviewing heartbeat timing.</p>
-                        </article>
-                      </div>
+
+                          {dashboardMode === "edit" ? (
+                            <div className="dashboardCanvasToolbar">
+                              <DashboardWidgetModal
+                                action={addDashboardTile}
+                                dashboardId={selectedDashboard.id}
+                                variableOptions={variableOptions}
+                              />
+                              <div className="dashboardCanvasModes">
+                                <span className="dashboardCanvasMode dashboardCanvasModeActive">Board</span>
+                                <span className="dashboardCanvasMode">Phone</span>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          <div className={`dashboardCanvasBoard ${dashboardMode === "view" ? "dashboardCanvasBoardView" : ""}`}>
+                            {selectedDashboard.tiles?.length ? (
+                              selectedDashboard.tiles.map((tile) => (
+                                <article className={`dashboardCanvasTile dashboardCanvasTile${tile.tile_type}`} key={tile.id}>
+                                  <div className="dashboardCanvasTileHead">
+                                    <strong>{formatDashboardTileTypeLabel(tile.tile_type)}</strong>
+                                    <span className="dashboardCanvasExample">Example</span>
+                                  </div>
+
+                                  <div className="dashboardCanvasTileBody">
+                                    {tile.tile_type === "switch" ? (
+                                      <div className="dashboardSwitchPreview">
+                                        <span>ON</span>
+                                        <span className="dashboardSwitchKnob" />
+                                      </div>
+                                    ) : null}
+
+                                    {tile.tile_type === "status" ? (
+                                      <div className="dashboardStatusPreview">ON</div>
+                                    ) : null}
+
+                                    {tile.tile_type === "button" ? (
+                                      <div className="dashboardButtonPreview">
+                                        <span />
+                                      </div>
+                                    ) : null}
+
+                                    {tile.tile_type === "value_display" ? (
+                                      <div className="dashboardValuePreview">
+                                        <strong>24.5</strong>
+                                        <span>{tile.variable_name || "Value"}</span>
+                                      </div>
+                                    ) : null}
+
+                                    {tile.tile_type === "led" ? (
+                                      <div className="dashboardLedPreview">
+                                        <span className="dashboardLedBulb" />
+                                        <strong>LED ON</strong>
+                                      </div>
+                                    ) : null}
+
+                                    {tile.tile_type === "sidebar" ? (
+                                      <div className="dashboardSidebarPreview">
+                                        <strong>{tile.tile_name}</strong>
+                                        <span>{tile.variable_name || "Linked variable"}</span>
+                                      </div>
+                                    ) : null}
+
+                                    {!["switch", "status", "button", "value_display", "led", "sidebar"].includes(tile.tile_type) ? (
+                                      <div className="dashboardGenericPreview">
+                                        <strong>{tile.tile_name}</strong>
+                                      </div>
+                                    ) : null}
+                                  </div>
+
+                                  {dashboardMode === "edit" ? (
+                                    <div className="dashboardCanvasTileMeta">
+                                      <span>{tile.thing_name || "No thing linked"}</span>
+                                      <strong>{tile.variable_name || "-"}</strong>
+                                    </div>
+                                  ) : null}
+                                </article>
+                              ))
+                            ) : (
+                              <div className="historyCard dashboardEmptyBoard">
+                                <strong>No tiles yet</strong>
+                                <p className="sectionCopy">Click Add and choose a widget to place it on the dashboard.</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="historyCard">
+                            <strong>Create Dashboard</strong>
+                            <p className="sectionCopy">Create a dashboard, open it, then add tiles linked to Thing variables.</p>
+                            <form action={createDashboard} className="createDashboardForm createDashboardFormCompact">
+                              <input className="input" name="dashboardName" placeholder="Greenhouse Dashboard" required />
+                              <button className="button buttonOn" type="submit">
+                                Create Dashboard
+                              </button>
+                            </form>
+                          </div>
+
+                          {dashboards.length ? (
+                            <div className="dashboardList">
+                              {dashboards.map((dashboard) => (
+                                <a className="dashboardListItem" href={buildDashboardPageLink(dashboard.id)} key={dashboard.id}>
+                                  <div>
+                                    <p className="authKicker">Dashboard</p>
+                                    <strong>{dashboard.dashboard_name}</strong>
+                                  </div>
+                                  <span className="builderMiniPill">{dashboard.tile_count} tiles</span>
+                                </a>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="historyCard">
+                              <strong>No dashboards yet</strong>
+                              <p className="sectionCopy">Create your first dashboard to add switch, value, and LED tiles.</p>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   ) : null}
 
