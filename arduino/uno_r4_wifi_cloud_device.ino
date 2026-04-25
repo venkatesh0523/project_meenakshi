@@ -9,12 +9,12 @@ const char* MQTT_HOST = "141.148.239.103";
 const int MQTT_PORT = 1883;
 
 // Next.js dashboard host. The Arduino still sends heartbeat here for Online/Offline.
-const char* CLOUD_HOST = "141.148.239.103";
+const char* CLOUD_HOST = "172.18.116.147";
 const int CLOUD_PORT = 3000;
 const bool CLOUD_USE_SSL = false;
 
-const char* DEVICE_ID = "a119c318-d7c7-41af-972d-5587e8506a41";
-const char* DEVICE_SECRET = "PVs5mxEQlVoYnB2GgfS--FtH";
+const char* DEVICE_ID = "arduino-ecce0dd8-f868-4b5f-9894-a7c3d5221f0e";
+const char* DEVICE_SECRET = "axl-8TvnuRJdsALhWgrbiWra";
 
 const int LED_PIN = 13;
 const unsigned long HEARTBEAT_INTERVAL_MS = 20000;

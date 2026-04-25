@@ -1,6 +1,10 @@
 import { readFile, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
+import { fileURLToPath } from "url";
+
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(moduleDir, "..", "..");
 
 function escapeCString(value) {
   return String(value ?? "")
@@ -38,6 +42,18 @@ function resolveLanIp() {
 }
 
 function resolveArduinoCloudTarget(appOrigin) {
+  const envHost = process.env.ARDUINO_CLOUD_HOST?.trim();
+  const envPort = process.env.ARDUINO_CLOUD_PORT?.trim();
+  const envUseSsl = process.env.ARDUINO_CLOUD_USE_SSL?.trim();
+
+  if (envHost) {
+    return {
+      host: envHost,
+      port: envPort ? Number(envPort) : 3000,
+      useSsl: envUseSsl === "true"
+    };
+  }
+
   const fallback = {
     host: "localhost",
     port: 3000,
@@ -75,8 +91,8 @@ export async function updateProvisionedArduinoSketch({
 }) {
   const cloudTarget = resolveArduinoCloudTarget(appOrigin);
   const sketchPaths = [
-    path.join(process.cwd(), "..", "arduino", "uno_r4_wifi_cloud_device.ino"),
-    path.join(process.cwd(), "..", "arduino", "uno_r4_wifi_cloud_device", "uno_r4_wifi_cloud_device.ino")
+    path.join(repoRoot, "arduino", "uno_r4_wifi_cloud_device.ino"),
+    path.join(repoRoot, "arduino", "uno_r4_wifi_cloud_device", "uno_r4_wifi_cloud_device.ino")
   ];
 
   await Promise.all(
