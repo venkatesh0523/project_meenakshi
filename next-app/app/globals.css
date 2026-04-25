@@ -1555,6 +1555,214 @@ a {
   gap: 14px;
 }
 
+.deviceLanding {
+  display: grid;
+  gap: 24px;
+  min-height: 360px;
+  padding: 42px 38px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+  align-items: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.deviceLandingHero {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
+.deviceLandingHero h2 {
+  margin: 0;
+  font-size: clamp(2.1rem, 3.4vw, 3.2rem);
+  line-height: 1.05;
+}
+
+.deviceLandingCopy {
+  margin: 0;
+  max-width: 42ch;
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.6;
+}
+
+.deviceLandingAction {
+  display: flex;
+  justify-content: center;
+}
+
+.deviceAddButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 240px;
+  padding: 18px 30px;
+  border: 0;
+  border-radius: 999px;
+  background: #118c8d;
+  color: white;
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.deviceSetupOverlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(31, 42, 31, 0.35);
+  z-index: 60;
+}
+
+.deviceSetupModal {
+  width: min(980px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.99);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+  box-shadow: 0 18px 50px rgba(49, 58, 37, 0.18);
+  overflow: hidden;
+}
+
+.deviceSetupHeader {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 28px;
+  border-bottom: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.deviceSetupHeader h3 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.deviceSetupBack,
+.deviceSetupBackSpacer {
+  width: 48px;
+  height: 48px;
+}
+
+.deviceSetupBack {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #394542;
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.deviceSetupClose {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.deviceSetupBody {
+  display: grid;
+  gap: 18px;
+  padding: 26px 28px 30px;
+  overflow: auto;
+}
+
+.deviceSetupSection {
+  display: grid;
+  gap: 6px;
+}
+
+.deviceSetupTitle {
+  font-size: 1.2rem;
+}
+
+.deviceSetupEyebrow {
+  margin: 0;
+  color: #394542;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.deviceSetupCopy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.deviceSetupOption {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(17, 140, 141, 0.18);
+  background: #eef8f8;
+  text-align: left;
+  cursor: pointer;
+}
+
+.deviceSetupOptionActive {
+  box-shadow: inset 0 0 0 1px rgba(17, 140, 141, 0.25);
+}
+
+.deviceSetupOptionIcon {
+  min-height: 128px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #dfe8e7, #f8fbfb);
+  color: #118c8d;
+  font-size: 4.8rem;
+  font-weight: 700;
+}
+
+.deviceSetupOptionIconUsb,
+.deviceSetupOptionIconBluetooth {
+  font-size: 4rem;
+}
+
+.deviceSetupOptionIconBluetooth {
+  color: #0d7ef2;
+}
+
+.deviceSetupOptionText {
+  display: grid;
+  gap: 8px;
+}
+
+.deviceSetupOptionText strong {
+  font-size: 2rem;
+}
+
+.deviceSetupOptionText span {
+  max-width: 32ch;
+  color: #4d5a57;
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.deviceSetupFormPanel {
+  padding: 22px;
+  border-radius: 18px;
+  background: rgba(235, 242, 242, 0.9);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
 .connectDeviceForm {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1564,6 +1772,316 @@ a {
 .serialProvisioner {
   display: grid;
   gap: 14px;
+}
+
+.serialWizard {
+  display: grid;
+}
+
+.serialWizardCard {
+  display: grid;
+  gap: 20px;
+  background: white;
+}
+
+.serialWizardCardWide {
+  gap: 24px;
+}
+
+.serialWizardBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+  border-radius: 16px 16px 0 0;
+  background: #eaf0f0;
+  color: #253743;
+  font-size: 1.05rem;
+}
+
+.serialWizardBanner strong {
+  font-size: 1.1rem;
+}
+
+.serialWizardBanner span {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.serialWizardIllustration {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.serialWizardCable {
+  position: absolute;
+  width: 160px;
+  height: 4px;
+  background: #3e4b53;
+  border-radius: 999px;
+}
+
+.serialWizardCable::before {
+  content: "";
+  position: absolute;
+  left: -32px;
+  top: -20px;
+  width: 3px;
+  height: 44px;
+  background: #3e4b53;
+}
+
+.serialWizardCable::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: #3e4b53;
+}
+
+.serialWizardBoard {
+  margin-left: 170px;
+  min-width: 140px;
+  min-height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #bcc7ca;
+  color: #118c8d;
+  font-size: 2.8rem;
+  font-weight: 700;
+}
+
+.serialWizardBoardLarge {
+  min-width: 160px;
+  min-height: 112px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(17, 140, 141, 0.18), rgba(17, 140, 141, 0.08));
+  color: #118c8d;
+}
+
+.serialWizardIntro {
+  display: grid;
+  gap: 10px;
+  padding: 0 22px;
+}
+
+.serialWizardIntro h4 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.serialWizardIntro p,
+.serialWizardNetworkHeader p,
+.serialWizardSummary p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.serialWizardTable {
+  display: grid;
+  gap: 8px;
+  padding: 0 22px 22px;
+}
+
+.serialWizardTableHead,
+.serialWizardTableRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 18px;
+  border-radius: 12px;
+}
+
+.serialWizardTableHead {
+  background: #eef3f3;
+  font-weight: 700;
+}
+
+.serialWizardTableRow {
+  border: 1px solid rgba(31, 42, 31, 0.1);
+  background: white;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.serialWizardConnected {
+  display: grid;
+  gap: 20px;
+  padding: 0 22px 22px;
+}
+
+.serialWizardIllustrationConnected {
+  min-height: 220px;
+}
+
+.serialWizardActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.serialWizardPrimary,
+.serialWizardSecondary {
+  min-width: 180px;
+  text-transform: uppercase;
+}
+
+.serialWizardDeviceHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 4px 0;
+  flex-wrap: wrap;
+}
+
+.serialWizardDeviceHeader strong {
+  display: block;
+  font-size: 1.35rem;
+}
+
+.serialWizardConnectedBadge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(17, 140, 141, 0.12);
+  color: #20575a;
+  font-weight: 700;
+}
+
+.serialWizardCompactButton {
+  padding: 10px 14px;
+}
+
+.serialWizardTimeline {
+  display: grid;
+  gap: 20px;
+}
+
+.serialWizardStep {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.serialWizardStepMarker {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 3px solid #0b4950;
+  color: #0b4950;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.serialWizardStepComplete .serialWizardStepMarker {
+  background: #20a29f;
+  border-color: #20a29f;
+  color: white;
+}
+
+.serialWizardStepMarkerActive {
+  background: white;
+}
+
+.serialWizardStepContent {
+  display: grid;
+  gap: 16px;
+}
+
+.serialWizardStepTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.serialWizardNetworkCard {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 42, 31, 0.12);
+  background: white;
+}
+
+.serialWizardNetworkHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.serialWizardNetworkHeader strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 1.15rem;
+}
+
+.serialWizardNetworkList {
+  max-height: 260px;
+  overflow: auto;
+  border-top: 1px solid rgba(31, 42, 31, 0.08);
+  border-bottom: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.serialWizardNetworkRow {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 16px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(31, 42, 31, 0.08);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.serialWizardNetworkRow:last-child {
+  border-bottom: 0;
+}
+
+.serialWizardNetworkRowActive {
+  color: #118c8d;
+}
+
+.serialWizardWifiIcon {
+  color: #65706e;
+  font-size: 1.1rem;
+}
+
+.serialWizardSummary {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(235, 242, 242, 0.9);
+}
+
+.serialWizardSummary span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
 }
 
 .serialHeader {
@@ -1931,6 +2449,57 @@ a {
 
   .connectDeviceForm {
     grid-template-columns: 1fr;
+  }
+
+  .serialWizardTableHead,
+  .serialWizardTableRow,
+  .serialWizardStep {
+    grid-template-columns: 1fr;
+  }
+
+  .serialWizardActions,
+  .serialWizardNetworkHeader,
+  .serialWizardDeviceHeader {
+    justify-content: flex-start;
+  }
+
+  .serialWizardPrimary,
+  .serialWizardSecondary {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .deviceLanding {
+    padding: 28px 18px 34px;
+    min-height: auto;
+  }
+
+  .deviceSetupModal {
+    width: min(100%, calc(100vw - 24px));
+  }
+
+  .deviceSetupHeader {
+    padding: 18px 20px;
+  }
+
+  .deviceSetupHeader h3 {
+    font-size: 1.5rem;
+  }
+
+  .deviceSetupBody {
+    padding: 20px;
+  }
+
+  .deviceSetupOption {
+    grid-template-columns: 1fr;
+  }
+
+  .deviceSetupOptionIcon {
+    min-height: 112px;
+  }
+
+  .deviceSetupOptionText strong {
+    font-size: 1.5rem;
   }
 
   .builderLayout {

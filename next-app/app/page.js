@@ -1,10 +1,11 @@
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { randomBytes, randomUUID } from "crypto";
 import DashboardAutoRefresh from "./DashboardAutoRefresh";
 import DashboardWidgetModal from "./DashboardWidgetModal";
+import DeviceSetupModal from "./DeviceSetupModal";
 import LedToggleButton from "./LedToggleButton";
-import WifiSerialProvisioner from "./WifiSerialProvisioner";
 import {
   addThingVariableForUser,
   addDashboardTileForUser,
@@ -19,6 +20,7 @@ import {
   getThingForUser,
   listDashboards,
   listDevices,
+  listKnownWifiNetworks,
   listThings,
   provisionDeviceForUser,
   renameThingForUser,
@@ -27,6 +29,7 @@ import {
   ,
   updateThingVariableForUser
 } from "../lib/devices";
+import { updateProvisionedArduinoSketch } from "../lib/arduino-sketch";
 import {
   authenticateUser,
   createSession,
@@ -37,6 +40,14 @@ import {
 
 function normalizeField(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function generateProvisionedDeviceId() {
+  return `arduino-${randomUUID()}`;
+}
+
+function generateProvisionedDeviceSecret() {
+  return randomBytes(18).toString("base64url");
 }
 
 function buildRedirect(pathname, params = {}) {
@@ -290,10 +301,12 @@ async function saveAndConnectArduinoDevice(formData) {
   "use server";
 
   const user = await requireUser();
-  const deviceId = normalizeField(formData.get("deviceId"));
-  const deviceName = normalizeField(formData.get("deviceName")) || deviceId;
+  const providedDeviceId = normalizeField(formData.get("deviceId"));
+  const deviceId = providedDeviceId || generateProvisionedDeviceId();
+  const deviceName = normalizeField(formData.get("deviceName")) || "Arduino UNO R4 WiFi";
   const deviceType = normalizeField(formData.get("deviceType")) || "arduino";
-  const deviceSecret = normalizeField(formData.get("deviceSecret"));
+  const providedDeviceSecret = normalizeField(formData.get("deviceSecret"));
+  const deviceSecret = providedDeviceSecret || generateProvisionedDeviceSecret();
   const boardModel = normalizeField(formData.get("boardModel")) || "Arduino UNO R4 WiFi";
   const fqbn = normalizeField(formData.get("fqbn")) || "arduino:renesas_uno:unor4wifi";
   const serialNumber = normalizeField(formData.get("serialNumber"));
@@ -303,10 +316,10 @@ async function saveAndConnectArduinoDevice(formData) {
   const wifiPassword = normalizeField(formData.get("wifiPassword"));
   const wifiSsid = manualWifi || selectedWifi;
 
-  if (!deviceId || !deviceSecret || !wifiSsid || !wifiPassword) {
+  if (!wifiSsid || !wifiPassword) {
     redirect(
       buildRedirect("/", {
-        authError: "Enter the Arduino device ID, device secret, Wi-Fi name, and Wi-Fi password.",
+        authError: "Choose a Wi-Fi network and enter the Wi-Fi password.",
         selectedDevice: deviceId
       })
     );
@@ -347,6 +360,18 @@ async function saveAndConnectArduinoDevice(formData) {
         selectedDevice: deviceId
       })
     );
+  }
+
+  try {
+    await updateProvisionedArduinoSketch({
+      appOrigin: getRequestOrigin(),
+      wifiSsid,
+      wifiPassword,
+      deviceId,
+      deviceSecret
+    });
+  } catch (error) {
+    console.error("Failed to update Arduino sketch after provisioning", error);
   }
 
   revalidatePath("/");
@@ -729,6 +754,7 @@ export default async function HomePage({ searchParams }) {
   const devices = user ? await listDevices(user.id) : [];
   const things = user ? await listThings(user.id) : [];
   const dashboards = user ? await listDashboards(user.id) : [];
+  const knownWifiNetworks = user ? await listKnownWifiNetworks(user.id) : [];
   const selectedThing =
     user && selectedThingId ? await getThingForUser(Number(selectedThingId), user.id) : null;
   const selectedDashboard =
@@ -1182,20 +1208,27 @@ export default async function HomePage({ searchParams }) {
 
                   {builderSection === "devices" ? (
                     <div className="builderSection stackCompact">
-                      <div className="historyCard connectDeviceCard">
-                        <div>
-                          <strong>Connect Arduino</strong>
+                      <section className="deviceLanding">
+                        <div className="deviceLandingHero">
+                          <p className="thingLandingEyebrow">Devices</p>
+                          <h2>Add a new Device</h2>
+                          <p className="deviceLandingCopy">
+                            Click the button below to open the setup popup and add your Arduino board.
+                          </p>
                         </div>
 
-                        <WifiSerialProvisioner
-                          devices={devices.map((device) => ({
-                            device_id: device.device_id,
-                            device_name: device.device_name
-                          }))}
-                          selectedDevice={selectedDevice}
-                          saveWifiAction={saveAndConnectArduinoDevice}
-                        />
-                      </div>
+                        <div className="deviceLandingAction">
+                          <DeviceSetupModal
+                            devices={devices.map((device) => ({
+                              device_id: device.device_id,
+                              device_name: device.device_name
+                            }))}
+                            knownWifiNetworks={knownWifiNetworks}
+                            selectedDevice={selectedDevice}
+                            saveWifiAction={saveAndConnectArduinoDevice}
+                          />
+                        </div>
+                      </section>
 
                       {visibleDevices.length > 0 ? (
                         <div className="deviceConfigList">
