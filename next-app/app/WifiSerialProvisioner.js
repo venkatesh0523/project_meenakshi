@@ -27,6 +27,7 @@ export default function WifiSerialProvisioner({
   const [serialSupported, setSerialSupported] = useState(false);
   const [serialConnected, setSerialConnected] = useState(false);
   const [serialBusy, setSerialBusy] = useState(false);
+  const [serialAction, setSerialAction] = useState("");
   const [serialMessage, setSerialMessage] = useState("Connect your Arduino board with USB to continue.");
   const [serialError, setSerialError] = useState("");
   const [serialStatus, setSerialStatus] = useState("Idle");
@@ -65,6 +66,7 @@ export default function WifiSerialProvisioner({
     clearPendingTimeout();
     timeoutRef.current = window.setTimeout(() => {
       setSerialBusy(false);
+      setSerialAction("");
 
       if (kind === "scan") {
         setSerialStatus("Wi-Fi scan timed out");
@@ -113,6 +115,7 @@ export default function WifiSerialProvisioner({
 
     setSerialConnected(false);
     setSerialStatus("Disconnected");
+    setSerialAction("");
   }
 
   async function sendSerialCommand(payload) {
@@ -134,6 +137,7 @@ export default function WifiSerialProvisioner({
 
       setSerialNetworks(nextNetworks);
       setSerialBusy(false);
+      setSerialAction("");
       setSerialStatus("Wi-Fi scan complete");
       setSerialMessage(nextNetworks.length > 0 ? "Wi-Fi scan complete. Choose a network below." : "No Wi-Fi networks found.");
       setSerialError("");
@@ -145,6 +149,7 @@ export default function WifiSerialProvisioner({
       clearPendingTimeout();
       setSerialBusy(false);
       setSerialError("");
+      setSerialAction("");
       setSerialStatus("Wi-Fi saved on board");
       setSerialMessage(message.message || "Wi-Fi saved on the board. Finishing cloud provisioning...");
       pushSerialLog(message.message || "Board confirmed Wi-Fi credentials were saved.");
@@ -161,6 +166,7 @@ export default function WifiSerialProvisioner({
     if (message.type === "wifiError") {
       clearPendingTimeout();
       setSerialBusy(false);
+      setSerialAction("");
       setSerialStatus("Board reported an error");
       setSerialError(message.message || "Unable to save Wi-Fi on the board.");
       pushSerialLog(message.message || "Board reported a Wi-Fi error.");
@@ -220,6 +226,7 @@ export default function WifiSerialProvisioner({
     }
 
     setSerialBusy(true);
+    setSerialAction("connect");
     setSerialError("");
     setSerialStatus("Waiting for browser permission");
     setSerialMessage("Waiting for board permission...");
@@ -234,6 +241,7 @@ export default function WifiSerialProvisioner({
       setPortLabel(buildPortLabel(port));
       setSerialConnected(true);
       setSerialBusy(false);
+      setSerialAction("");
       setSerialStatus("Board connected");
       setSerialMessage("Device connected. Ready to retrieve board information.");
       pushSerialLog(`Connected to board on ${buildPortLabel(port)}.`);
@@ -242,6 +250,7 @@ export default function WifiSerialProvisioner({
       void readSerialLoop(port).catch((error) => {
         setSerialError(`Serial connection lost: ${error.message}`);
         setSerialBusy(false);
+        setSerialAction("");
         setSerialConnected(false);
         setSerialStatus("Serial connection lost");
         pushSerialLog(`Serial connection lost: ${error.message}`);
@@ -249,6 +258,7 @@ export default function WifiSerialProvisioner({
       });
     } catch (error) {
       setSerialBusy(false);
+      setSerialAction("");
       setSerialStatus("Connection failed");
       setSerialError(error.message || "Unable to connect to the board.");
       pushSerialLog(error.message || "Unable to connect to the board.");
@@ -263,6 +273,7 @@ export default function WifiSerialProvisioner({
 
     setStep("network");
     setSerialBusy(true);
+    setSerialAction("scan");
     setSerialError("");
     setSerialStatus("Scanning Wi-Fi");
     setSerialMessage("Scanning Wi-Fi networks from the board...");
@@ -274,6 +285,7 @@ export default function WifiSerialProvisioner({
     } catch (error) {
       clearPendingTimeout();
       setSerialBusy(false);
+      setSerialAction("");
       setSerialStatus("Wi-Fi scan failed");
       setSerialError(error.message || "Unable to scan Wi-Fi networks.");
       pushSerialLog(error.message || "Unable to scan Wi-Fi networks.");
@@ -293,6 +305,7 @@ export default function WifiSerialProvisioner({
 
     submitRequestedRef.current = false;
     setSerialBusy(true);
+    setSerialAction("save");
     setSerialError("");
     setSerialStatus("Sending Wi-Fi credentials");
     setSerialMessage("Pushing Wi-Fi settings to the board...");
@@ -308,6 +321,7 @@ export default function WifiSerialProvisioner({
     } catch (error) {
       clearPendingTimeout();
       setSerialBusy(false);
+      setSerialAction("");
       setSerialStatus("Provisioning failed");
       setSerialError(error.message || "Unable to send Wi-Fi settings to the board.");
       pushSerialLog(error.message || "Unable to send Wi-Fi settings to the board.");
@@ -344,7 +358,7 @@ export default function WifiSerialProvisioner({
 
           <div className="serialWizardActions serialWizardActionsStart">
             <button className="button buttonOn serialWizardPrimary" type="button" onClick={connectBoard} disabled={serialBusy}>
-              {serialBusy ? "Connecting..." : serialConnected ? "Reconnect Board" : "Connect Board"}
+              {serialAction === "connect" ? "Connecting..." : serialConnected ? "Reconnect Board" : "Connect Board"}
             </button>
           </div>
 
@@ -355,7 +369,7 @@ export default function WifiSerialProvisioner({
             </div>
             <button type="button" className="serialWizardTableRow" onClick={connectBoard} disabled={serialBusy}>
               <strong>{serialConnected ? "Arduino UNO R4 WiFi" : "Click to connect Arduino board"}</strong>
-              <span>{serialConnected ? portLabel : serialBusy ? "Connecting..." : "USB"}</span>
+              <span>{serialConnected ? portLabel : serialAction === "connect" ? "Connecting..." : "USB"}</span>
             </button>
           </div>
         </section>
@@ -390,10 +404,10 @@ export default function WifiSerialProvisioner({
                 Change Device
               </button>
               <button className="button buttonGhost serialWizardSecondary" type="button" onClick={connectBoard} disabled={serialBusy}>
-                {serialBusy ? "Connecting..." : "Reconnect Board"}
+                {serialAction === "connect" ? "Connecting..." : "Reconnect Board"}
               </button>
               <button className="button buttonOn serialWizardPrimary" type="button" onClick={scanNetworks} disabled={serialBusy}>
-                {serialBusy ? "Scanning..." : "Continue"}
+                {serialAction === "scan" ? "Scanning..." : "Continue"}
               </button>
             </div>
           </div>
@@ -443,7 +457,7 @@ export default function WifiSerialProvisioner({
                       <p>{serialMessage}</p>
                     </div>
                     <button className="button buttonGhost serialWizardCompactButton" type="button" onClick={scanNetworks} disabled={serialBusy}>
-                      {serialBusy ? "Scanning..." : "Scan Again"}
+                      {serialAction === "scan" ? "Scanning..." : "Scan Again"}
                     </button>
                   </div>
 
@@ -530,10 +544,10 @@ export default function WifiSerialProvisioner({
 
                   <div className="connectDeviceActions">
                     <button className="button buttonGhost serialWizardSecondary" type="button" onClick={connectBoard} disabled={serialBusy}>
-                      {serialBusy ? "Connecting..." : "Reconnect Board"}
+                      {serialAction === "connect" ? "Connecting..." : "Reconnect Board"}
                     </button>
                     <button className="button buttonOn serialWizardPrimary" type="button" onClick={saveWifiToBoard} disabled={serialBusy}>
-                      {serialBusy ? "Provisioning..." : "Continue"}
+                      {serialAction === "save" ? "Provisioning..." : "Continue"}
                     </button>
                   </div>
                 </form>
