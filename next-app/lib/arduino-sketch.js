@@ -91,6 +91,7 @@ export async function updateProvisionedArduinoSketch({
 }) {
   const cloudTarget = resolveArduinoCloudTarget(appOrigin);
   const sketchPaths = [
+    path.join(repoRoot, "arduino", "arduino_mqtt_device.ino"),
     path.join(repoRoot, "arduino", "uno_r4_wifi_cloud_device.ino"),
     path.join(repoRoot, "arduino", "uno_r4_wifi_cloud_device", "uno_r4_wifi_cloud_device.ino")
   ];
@@ -102,6 +103,8 @@ export async function updateProvisionedArduinoSketch({
 
       next = replaceConst(next, "WIFI_SSID", wifiSsid);
       next = replaceConst(next, "WIFI_PASSWORD", wifiPassword);
+      next = replaceConst(next, "DEFAULT_WIFI_SSID", wifiSsid);
+      next = replaceConst(next, "DEFAULT_WIFI_PASSWORD", wifiPassword);
       next = replaceConst(next, "CLOUD_HOST", cloudTarget.host);
       next = replaceIntConst(next, "CLOUD_PORT", cloudTarget.port);
       next = replaceBoolConst(next, "CLOUD_USE_SSL", cloudTarget.useSsl);

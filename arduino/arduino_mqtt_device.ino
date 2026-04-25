@@ -12,8 +12,8 @@ const int MQTT_PORT = 1883;
 const char* CLOUD_HOST = "141.148.239.103";
 const int CLOUD_PORT = 3000;
 
-const char* DEVICE_ID = "a119c318-d7c7-41af-972d-5587e8506a41";
-const char* DEVICE_SECRET = "PVs5mxEQlVoYnB2GgfS--FtH";
+const char* DEVICE_ID = "arduino-5d34d5fc-cf25-4e76-902e-f8536c8ec137";
+const char* DEVICE_SECRET = "yCjtQWdf5N_8EjiXsk4RE2jD";
 const int LED_PIN = 13;
 const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
 
