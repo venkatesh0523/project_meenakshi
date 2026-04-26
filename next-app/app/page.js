@@ -495,8 +495,8 @@ async function addThingVariable(formData) {
   const user = await requireUser();
   const thingId = normalizeField(formData.get("thingId"));
   const variableName = normalizeField(formData.get("variableName"));
-  const variableType = normalizeField(formData.get("variableType")) || "boolean";
-  const permission = normalizeField(formData.get("permission")) || "read_write";
+  const variableType = "boolean";
+  const permission = "read_write";
 
   if (!thingId || !variableName) {
     redirect(
@@ -536,7 +536,7 @@ async function createThing(formData) {
 
   const user = await requireUser();
   const thingName = normalizeField(formData.get("thingName"));
-  const deviceSketch = normalizeField(formData.get("deviceSketch")) || "uno_r4_wifi_cloud_device";
+  const deviceSketch = "uno_r4_wifi_cloud_device";
   const deviceId = normalizeField(formData.get("deviceId"));
 
   if (!thingName) {
@@ -570,8 +570,8 @@ async function updateThingVariable(formData) {
   const thingId = normalizeField(formData.get("thingId"));
   const variableId = normalizeField(formData.get("variableId"));
   const variableName = normalizeField(formData.get("variableName"));
-  const variableType = normalizeField(formData.get("variableType")) || "boolean";
-  const permission = normalizeField(formData.get("permission")) || "read_write";
+  const variableType = "boolean";
+  const permission = "read_write";
 
   if (!thingId || !variableId || !variableName) {
     redirect(buildRedirect("/", { builder: "things", thingId, authError: "Choose a valid variable." }));
@@ -966,18 +966,9 @@ export default async function HomePage({ searchParams }) {
 
                               <form action={addThingVariable} className="thingVariableForm">
                                 <input type="hidden" name="thingId" value={selectedThing.thing_id} />
-                                <input className="input" name="variableName" placeholder="ledon_red" required />
-                                <select className="input" name="variableType" defaultValue="boolean">
-                                  <option value="boolean">Boolean</option>
-                                  <option value="number">Number</option>
-                                  <option value="string">String</option>
-                                </select>
-                                <select className="input" name="permission" defaultValue="read_write">
-                                  <option value="read_write">Read Write</option>
-                                  <option value="read_only">Read Only</option>
-                                </select>
+                                <input className="input" name="variableName" placeholder="switch_1" required />
                                 <button className="button buttonOn" type="submit">
-                                  Add Variable
+                                  Add Switch
                                 </button>
                               </form>
 
@@ -989,15 +980,8 @@ export default async function HomePage({ searchParams }) {
                                         <input type="hidden" name="thingId" value={selectedThing.thing_id} />
                                         <input type="hidden" name="variableId" value={variable.id} />
                                         <input className="input" name="variableName" defaultValue={variable.name} required />
-                                        <select className="input" name="variableType" defaultValue={variable.type}>
-                                          <option value="boolean">Boolean</option>
-                                          <option value="number">Number</option>
-                                          <option value="string">String</option>
-                                        </select>
-                                        <select className="input" name="permission" defaultValue={variable.permission}>
-                                          <option value="read_write">Read Write</option>
-                                          <option value="read_only">Read Only</option>
-                                        </select>
+                                        <input className="input" value="Switch" readOnly />
+                                        <input className="input" value="Read Write" readOnly />
                                         <button className="button buttonGhost" type="submit">
                                           Save
                                         </button>
@@ -1027,10 +1011,10 @@ export default async function HomePage({ searchParams }) {
                             <section className="thingLanding">
                               <div className="thingLandingHero">
                                 <p className="thingLandingEyebrow">Things</p>
-                                <h2>Create a new Thing in Arduino Cloud</h2>
+                                <h2>Create a clean Thing for a Switch</h2>
                                 <p className="thingLandingCopy">
-                                  Follow these simple steps to create your first Thing and connect variables,
-                                  sketch, and metadata to your Arduino device.
+                                  Start with one simple switch-linked Thing. Later we can add more variable types and
+                                  advanced controls.
                                 </p>
                               </div>
 
@@ -1043,8 +1027,7 @@ export default async function HomePage({ searchParams }) {
                                   </div>
                                   <strong>Create a Thing</strong>
                                   <p>
-                                    A Thing is a virtual entity that lets you link your physical device to the Cloud:
-                                    it includes variables, sketch and metadata.
+                                    Create one Thing and link it to your Arduino device with a clean name.
                                   </p>
                                 </article>
 
@@ -1054,10 +1037,9 @@ export default async function HomePage({ searchParams }) {
                                     <span className="thingLandingNode thingLandingNodeSmall" />
                                     <span className="thingLandingNode thingLandingNodeWifi" />
                                   </div>
-                                  <strong>Associate Device and Network</strong>
+                                  <strong>Associate Device</strong>
                                   <p>
-                                    Select the device you want to use and enter your network credentials so you can
-                                    send and receive data remotely.
+                                    Choose the Arduino device that should control this switch.
                                   </p>
                                 </article>
 
@@ -1066,10 +1048,9 @@ export default async function HomePage({ searchParams }) {
                                     <span className="thingLandingNode thingLandingNodeLarge" />
                                     <span className="thingLandingNode thingLandingNodeCode" />
                                   </div>
-                                  <strong>Start creating</strong>
+                                  <strong>Add a Switch</strong>
                                   <p>
-                                    Add Cloud Variables that are included in the sketch and used to exchange data
-                                    with the Cloud.
+                                    Add one switch variable now. We can add more thing types later.
                                   </p>
                                 </article>
                               </div>
@@ -1078,13 +1059,7 @@ export default async function HomePage({ searchParams }) {
                                 <summary className="thingLandingCta">+ Create Thing</summary>
                                 <div className="thingCreatePanel">
                                   <form action={createThing} className="createThingForm createThingFormLanding">
-                                    <input className="input" name="thingName" placeholder="Greenhouse Thing" required />
-                                    <input
-                                      className="input"
-                                      name="deviceSketch"
-                                      placeholder="uno_r4_wifi_cloud_device"
-                                      defaultValue="uno_r4_wifi_cloud_device"
-                                    />
+                                    <input className="input" name="thingName" placeholder="My Switch Thing" required />
                                     <select className="input" name="deviceId" defaultValue="">
                                       <option value="">No device linked yet</option>
                                       {devices.map((device) => (
@@ -1103,18 +1078,12 @@ export default async function HomePage({ searchParams }) {
                           ) : (
                             <>
                               <div className="historyCard">
-                                <strong>Create Thing</strong>
+                                <strong>Create Switch Thing</strong>
                                 <p className="sectionCopy">
-                                  A Thing is a virtual entity that links variables, sketch, and metadata in the Cloud.
+                                  Keep it simple: create a Thing and add only switch variables for now.
                                 </p>
                                 <form action={createThing} className="createThingForm">
-                                  <input className="input" name="thingName" placeholder="Greenhouse Thing" required />
-                                  <input
-                                    className="input"
-                                    name="deviceSketch"
-                                    placeholder="uno_r4_wifi_cloud_device"
-                                    defaultValue="uno_r4_wifi_cloud_device"
-                                  />
+                                  <input className="input" name="thingName" placeholder="My Switch Thing" required />
                                   <select className="input" name="deviceId" defaultValue="">
                                     <option value="">No device linked yet</option>
                                     {devices.map((device) => (
@@ -1143,8 +1112,8 @@ export default async function HomePage({ searchParams }) {
                                           </strong>
                                         </div>
                                         <div className="thingRowCell">
-                                          <span>Device Sketch</span>
-                                          <code>{thing.device_sketch || "uno_r4_wifi_cloud_device"}</code>
+                                          <span>Device</span>
+                                          <strong>{thing.device_name || "Not linked yet"}</strong>
                                         </div>
                                         <div className="thingRowCell">
                                           <span>Last Modified</span>
@@ -1198,28 +1167,19 @@ export default async function HomePage({ searchParams }) {
                                         {thing.variables.length > 0 ? (
                                           thing.variables.map((variable) => (
                                             <span className="builderMiniPill" key={variable.id || variable.name}>
-                                              {variable.name} · {variable.type}
+                                              {variable.name} · Switch
                                             </span>
                                           ))
                                         ) : (
-                                          <span className="builderMiniPill">No variables yet</span>
+                                          <span className="builderMiniPill">No switch added yet</span>
                                         )}
                                       </div>
 
                                       <form action={addThingVariable} className="thingVariableForm">
                                         <input type="hidden" name="thingId" value={thing.thing_id} />
-                                        <input className="input" name="variableName" placeholder="ledon_red" required />
-                                        <select className="input" name="variableType" defaultValue="boolean">
-                                          <option value="boolean">Boolean</option>
-                                          <option value="number">Number</option>
-                                          <option value="string">String</option>
-                                        </select>
-                                        <select className="input" name="permission" defaultValue="read_write">
-                                          <option value="read_write">Read Write</option>
-                                          <option value="read_only">Read Only</option>
-                                        </select>
+                                        <input className="input" name="variableName" placeholder="switch_1" required />
                                         <button className="button buttonOn" type="submit">
-                                          Add Variable
+                                          Add Switch
                                         </button>
                                       </form>
                                     </div>
