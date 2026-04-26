@@ -155,6 +155,116 @@ const char* DEVICE_ID = "${device.device_id}";
 const char* DEVICE_SECRET = "${device.device_secret || ""}";`;
 }
 
+function buildThingVariableIdentifier(name, fallbackIndex = 1) {
+  const normalized = String(name || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  if (!normalized) {
+    return `switch_${fallbackIndex}`;
+  }
+
+  return /^[a-zA-Z_]/.test(normalized) ? normalized : `switch_${fallbackIndex}_${normalized}`;
+}
+
+function buildThingSketchFiles(thing, origin) {
+  const variables = (Array.isArray(thing.variables) ? thing.variables : []).map((variable, index) => ({
+    ...variable,
+    codeName: buildThingVariableIdentifier(variable.name, index + 1)
+  }));
+  const primaryVariable = variables[0]?.codeName || "switch_1";
+
+  let host = "localhost";
+  try {
+    host = new URL(origin).hostname;
+  } catch (error) {
+    // Use localhost fallback.
+  }
+
+  const ino = `#include "thingProperties.h"
+
+const int LED_PIN = 13;
+
+void setup() {
+  Serial.begin(115200);
+  delay(1500);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+
+  initProperties();
+  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+
+  setDebugMessageLevel(2);
+  ArduinoCloud.printDebugInfo();
+}
+
+void loop() {
+  ArduinoCloud.update();
+}
+
+void on${primaryVariable.charAt(0).toUpperCase()}${primaryVariable.slice(1)}Change() {
+  digitalWrite(LED_PIN, ${primaryVariable} ? HIGH : LOW);
+}`;
+
+  const propertiesLines = variables.length
+    ? variables
+        .map(
+          (variable) =>
+            `bool ${variable.codeName};
+
+void on${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)}Change();`
+        )
+        .join("\n\n")
+    : `bool ${primaryVariable};
+
+void on${primaryVariable.charAt(0).toUpperCase()}${primaryVariable.slice(1)}Change();`;
+
+  const propertyRegistrations = (variables.length ? variables : [{ codeName: primaryVariable }])
+    .map(
+      (variable) =>
+        `  ArduinoCloud.addProperty(${variable.codeName}, READWRITE, ON_CHANGE, on${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)}Change);`
+    )
+    .join("\n");
+
+  const thingProperties = `#include <ArduinoIoTCloud.h>
+#include <Arduino_ConnectionHandler.h>
+
+const char DEVICE_LOGIN_NAME[]  = "${thing.device_id || ""}";
+const char DEVICE_KEY[]         = "${thing.device_id || ""}";
+const char DEVICE_SECRET[]      = "${thing.device_id ? "set-in-dashboard" : ""}";
+
+const char SSID[]               = "${thing.device_name || ""}";
+const char PASS[]               = "YOUR_WIFI_PASSWORD";
+
+${propertiesLines}
+
+WiFiConnectionHandler ArduinoIoTPreferredConnection(SSID, PASS);
+
+void initProperties() {
+${propertyRegistrations}
+}
+`;
+
+  const readme = `Thing: ${thing.thing_name}
+Device: ${thing.device_name || "Not linked yet"}
+Cloud host: ${host}
+
+How to use:
+1. Copy the generated sketch into the Arduino IDE.
+2. Replace Wi-Fi password in thingProperties.h.
+3. Use the device credentials shown on the Devices page.
+4. Upload to your Arduino UNO R4 WiFi.
+`;
+
+  return [
+    { id: "ino", label: `${thing.thing_name || "thing"}.ino`, content: ino },
+    { id: "properties", label: "thingProperties.h", content: thingProperties },
+    { id: "readme", label: "README.txt", content: readme }
+  ];
+}
+
 const builderSections = [
   { id: "things", label: "Things" },
   { id: "devices", label: "Devices" },
@@ -189,11 +299,12 @@ function buildBuilderLink(sectionId, selectedDevice = "") {
   });
 }
 
-function buildThingPageLink(thingId = "", tab = "variables") {
+function buildThingPageLink(thingId = "", tab = "variables", sketchFile = "") {
   return buildRedirect("/", {
     builder: "things",
     thingId,
-    tab
+    tab,
+    sketchFile
   });
 }
 
@@ -778,6 +889,7 @@ export default async function HomePage({ searchParams }) {
   const selectedDevice = searchParams?.selectedDevice || "";
   const selectedThingId = searchParams?.thingId || "";
   const selectedThingTab = searchParams?.tab === "sketch" ? "sketch" : "variables";
+  const selectedSketchFile = searchParams?.sketchFile || "ino";
   const selectedDashboardId = searchParams?.dashboardId || "";
   const dashboardMode = searchParams?.mode === "edit" ? "edit" : "view";
   const devices = user ? await listDevices(user.id) : [];
@@ -806,6 +918,9 @@ export default async function HomePage({ searchParams }) {
       variableName: variable.name
     }))
   );
+  const thingSketchFiles = selectedThing ? buildThingSketchFiles(selectedThing, requestOrigin) : [];
+  const activeThingSketchFile =
+    thingSketchFiles.find((file) => file.id === selectedSketchFile) || thingSketchFiles[0] || null;
 
   return (
     <main className="page">
@@ -1024,17 +1139,34 @@ export default async function HomePage({ searchParams }) {
                                 <div>
                                   <strong>Sketch</strong>
                                   <p className="sectionCopy">
-                                    The Thing is linked to <code>{selectedThing.device_sketch || "uno_r4_wifi_cloud_device"}</code>.
+                                    Generated switch-only sketch files for <code>{selectedThing.device_sketch || "uno_r4_wifi_cloud_device"}</code>.
                                   </p>
                                 </div>
                               </div>
 
-                              <div className="historyCard">
-                                <strong>Sketch tools coming next</strong>
-                                <p className="sectionCopy">
-                                  For now this Thing supports switch variables only. Later we can add generated sketch
-                                  helpers and code blocks here.
-                                </p>
+                              <div className="thingSketchFiles">
+                                <div className="thingSketchTabs">
+                                  {thingSketchFiles.map((file) => (
+                                    <a
+                                      key={file.id}
+                                      className={`thingSketchTab ${activeThingSketchFile?.id === file.id ? "thingSketchTabActive" : ""}`}
+                                      href={buildThingPageLink(selectedThing.thing_id, "sketch", file.id)}
+                                    >
+                                      {file.label}
+                                    </a>
+                                  ))}
+                                </div>
+
+                                {activeThingSketchFile ? (
+                                  <pre className="thingSketchCode">
+                                    <code>{activeThingSketchFile.content}</code>
+                                  </pre>
+                                ) : (
+                                  <div className="historyCard">
+                                    <strong>No sketch files yet</strong>
+                                    <p className="sectionCopy">Add a switch variable to generate sketch code.</p>
+                                  </div>
+                                )}
                               </div>
                             </section>
                           )}
