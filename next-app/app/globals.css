@@ -2178,6 +2178,36 @@ a {
   word-break: break-word;
 }
 
+.deviceSketchBlock {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.deviceSketchHeader {
+  display: grid;
+  gap: 4px;
+}
+
+.deviceSketchHeader span {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.deviceSketchCode {
+  margin: 0;
+  padding: 14px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 8px;
+  background: rgba(216, 233, 236, 0.55);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
 .ledControl,
 .deviceActions {
   display: flex;

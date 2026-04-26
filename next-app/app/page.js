@@ -128,6 +128,33 @@ function buildMqttCommandTopic(device) {
   return `farm1/${device.device_id}/cmd`;
 }
 
+function buildDeviceSketchSnippet(origin, device) {
+  let host = "localhost";
+  let cloudPort = 3000;
+  let useSsl = false;
+
+  try {
+    const url = new URL(origin);
+    host = url.hostname;
+    cloudPort = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
+    useSsl = url.protocol === "https:";
+  } catch (error) {
+    // Fall back to defaults when PUBLIC_APP_URL is malformed.
+  }
+
+  return `const char* DEFAULT_WIFI_SSID = "${device.wifi_ssid || ""}";
+const char* DEFAULT_WIFI_PASSWORD = "${device.wifi_password || ""}";
+
+const char* MQTT_HOST = "${host}";
+const int MQTT_PORT = 1883;
+const char* CLOUD_HOST = "${host}";
+const int CLOUD_PORT = ${cloudPort};
+const bool CLOUD_USE_SSL = ${useSsl ? "true" : "false"};
+
+const char* DEVICE_ID = "${device.device_id}";
+const char* DEVICE_SECRET = "${device.device_secret || ""}";`;
+}
+
 const builderSections = [
   { id: "things", label: "Things" },
   { id: "devices", label: "Devices" },
@@ -1286,6 +1313,15 @@ export default async function HomePage({ searchParams }) {
                                 <div className="deviceConfigRow">
                                   <span>GPIO 13 LED</span>
                                   <strong>{device.led_state || "OFF"}</strong>
+                                </div>
+                                <div className="deviceSketchBlock">
+                                  <div className="deviceSketchHeader">
+                                    <strong>Generated Sketch Config</strong>
+                                    <span>Copy this into `arduino_mqtt_device.ino` for this device only.</span>
+                                  </div>
+                                  <pre className="deviceSketchCode">
+                                    <code>{buildDeviceSketchSnippet(requestOrigin, device)}</code>
+                                  </pre>
                                 </div>
                                 <div className="deviceActions">
                                   <form action={toggleLedCommand}>
