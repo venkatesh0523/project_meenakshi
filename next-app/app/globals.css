@@ -1150,6 +1150,33 @@ a {
   gap: 10px;
 }
 
+.dashboardTileEditActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboardTileIconButton,
+.dashboardTileDeleteButton {
+  border: 1px solid rgba(31, 42, 31, 0.12);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dashboardTileIconButton {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.dashboardTileDeleteButton {
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: #8b2d2d;
+}
+
 .dashboardCanvasExample {
   display: inline-flex;
   align-items: center;
@@ -1394,6 +1421,13 @@ a {
   overflow: hidden;
 }
 
+.widgetModalCompact {
+  width: min(1120px, calc(100vw - 40px));
+  gap: 20px;
+  padding: 0;
+  overflow: hidden;
+}
+
 .widgetModalTopBar {
   display: flex;
   justify-content: center;
@@ -1406,11 +1440,22 @@ a {
   min-height: 620px;
 }
 
+.widgetModalSimple {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.7fr);
+  min-height: 560px;
+}
+
 .widgetModalPanel {
   display: grid;
   gap: 18px;
   padding: 22px;
   border-right: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.widgetSimpleHeader {
+  display: grid;
+  gap: 8px;
 }
 
 .widgetPreviewPanel {

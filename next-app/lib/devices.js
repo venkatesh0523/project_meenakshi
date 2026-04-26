@@ -72,6 +72,7 @@ async function ensureDevicesSchema() {
         dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
         tile_name VARCHAR(150) NOT NULL,
         tile_type VARCHAR(40) NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
         linked_thing_id INTEGER REFERENCES things(id) ON DELETE SET NULL,
         linked_variable_id INTEGER REFERENCES thing_variables(id) ON DELETE SET NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -116,6 +117,21 @@ async function ensureDevicesSchema() {
 
       ALTER TABLE dashboard_tiles
       ADD COLUMN IF NOT EXISTS linked_variable_id INTEGER REFERENCES thing_variables(id) ON DELETE SET NULL;
+
+      ALTER TABLE dashboard_tiles
+      ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+
+      WITH ordered_tiles AS (
+        SELECT
+          id,
+          ROW_NUMBER() OVER (PARTITION BY dashboard_id ORDER BY created_at ASC, id ASC) AS desired_order
+        FROM dashboard_tiles
+      )
+      UPDATE dashboard_tiles
+      SET sort_order = ordered_tiles.desired_order
+      FROM ordered_tiles
+      WHERE dashboard_tiles.id = ordered_tiles.id
+        AND dashboard_tiles.sort_order = 0;
 
       ALTER TABLE dashboard_tiles
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
@@ -379,6 +395,7 @@ async function getDashboardForUser(dashboardId, userId) {
         dashboard_tiles.tile_type,
         dashboard_tiles.linked_thing_id,
         dashboard_tiles.linked_variable_id,
+        dashboard_tiles.sort_order,
         dashboard_tiles.created_at,
         dashboard_tiles.updated_at,
         things.thing_name,
@@ -393,7 +410,7 @@ async function getDashboardForUser(dashboardId, userId) {
       LEFT JOIN thing_variables
         ON thing_variables.id = dashboard_tiles.linked_variable_id
       WHERE dashboard_tiles.dashboard_id = $1
-      ORDER BY dashboard_tiles.created_at ASC
+      ORDER BY dashboard_tiles.sort_order ASC, dashboard_tiles.created_at ASC
     `,
     [dashboardId]
   );
@@ -467,14 +484,21 @@ async function addDashboardTileForUser({
 
   const result = await db.query(
     `
+      WITH next_position AS (
+        SELECT COALESCE(MAX(sort_order), 0) + 1 AS value
+        FROM dashboard_tiles
+        WHERE dashboard_id = $1
+      )
       INSERT INTO dashboard_tiles (
         dashboard_id,
         tile_name,
         tile_type,
+        sort_order,
         linked_thing_id,
         linked_variable_id
       )
-      VALUES ($1, $2, $3, $4, $5)
+      SELECT $1, $2, $3, next_position.value, $4, $5
+      FROM next_position
       RETURNING id
     `,
     [dashboardId, tileName.trim(), tileType.trim().toLowerCase(), linkedThingId, linkedVariableId]
@@ -970,6 +994,118 @@ async function setDashboardTileVariableValueForUser({
   return result.rows[0];
 }
 
+async function moveDashboardTileForUser({
+  dashboardId,
+  tileId,
+  userId,
+  direction
+}) {
+  await ensureDevicesSchema();
+  const currentResult = await db.query(
+    `
+      SELECT dashboard_tiles.id, dashboard_tiles.sort_order
+      FROM dashboard_tiles
+      JOIN dashboards
+        ON dashboards.id = dashboard_tiles.dashboard_id
+      WHERE dashboard_tiles.id = $1
+        AND dashboard_tiles.dashboard_id = $2
+        AND dashboards.owner_user_id = $3
+    `,
+    [tileId, dashboardId, userId]
+  );
+
+  const currentTile = currentResult.rows[0];
+  if (!currentTile) {
+    return { ok: false, reason: "missing-tile" };
+  }
+
+  const comparison = direction === "left" ? "<" : ">";
+  const ordering = direction === "left" ? "DESC" : "ASC";
+  const adjacentResult = await db.query(
+    `
+      SELECT dashboard_tiles.id, dashboard_tiles.sort_order
+      FROM dashboard_tiles
+      JOIN dashboards
+        ON dashboards.id = dashboard_tiles.dashboard_id
+      WHERE dashboard_tiles.dashboard_id = $1
+        AND dashboards.owner_user_id = $2
+        AND dashboard_tiles.sort_order ${comparison} $3
+      ORDER BY dashboard_tiles.sort_order ${ordering}
+      LIMIT 1
+    `,
+    [dashboardId, userId, currentTile.sort_order]
+  );
+
+  const adjacentTile = adjacentResult.rows[0];
+  if (!adjacentTile) {
+    return { ok: false, reason: "edge" };
+  }
+
+  await db.query(
+    `
+      UPDATE dashboard_tiles
+      SET
+        sort_order = CASE
+          WHEN id = $1 THEN $3
+          WHEN id = $2 THEN $4
+          ELSE sort_order
+        END,
+        updated_at = NOW()
+      WHERE dashboard_id = $5
+        AND id IN ($1, $2)
+    `,
+    [currentTile.id, adjacentTile.id, adjacentTile.sort_order, currentTile.sort_order, dashboardId]
+  );
+
+  await db.query(
+    `
+      UPDATE dashboards
+      SET updated_at = NOW()
+      WHERE id = $1
+        AND owner_user_id = $2
+    `,
+    [dashboardId, userId]
+  );
+
+  return { ok: true };
+}
+
+async function deleteDashboardTileForUser({
+  dashboardId,
+  tileId,
+  userId
+}) {
+  await ensureDevicesSchema();
+  const result = await db.query(
+    `
+      DELETE FROM dashboard_tiles
+      USING dashboards
+      WHERE dashboard_tiles.id = $1
+        AND dashboard_tiles.dashboard_id = $2
+        AND dashboards.id = dashboard_tiles.dashboard_id
+        AND dashboards.owner_user_id = $3
+      RETURNING dashboard_tiles.id
+    `,
+    [tileId, dashboardId, userId]
+  );
+
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  await db.query(
+    `
+      UPDATE dashboards
+      SET updated_at = NOW()
+      WHERE id = $1
+        AND owner_user_id = $2
+    `,
+    [dashboardId, userId]
+  );
+
+  return result.rows[0];
+}
+
 async function deleteThingVariableForUser({ variableId, thingId, userId }) {
   await ensureDevicesSchema();
   const result = await db.query(
@@ -1194,6 +1330,7 @@ module.exports = {
   createThingForUser,
   createDevice,
   deleteThingVariableForUser,
+  deleteDashboardTileForUser,
   deleteDeviceForUser,
   deleteThingForUser,
   duplicateThingForUser,
@@ -1208,6 +1345,7 @@ module.exports = {
   listDevices,
   listThings,
   listRecentCommands,
+  moveDashboardTileForUser,
   provisionDeviceForUser,
   renameThingForUser,
   saveCommand,

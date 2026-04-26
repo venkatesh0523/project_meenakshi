@@ -1,51 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-
-const widgetOptions = [
-  { value: "switch", label: "Switch", category: "interaction", description: "Toggle a linked variable." },
-  { value: "button", label: "Push Button", category: "interaction", description: "Trigger a button-like action." },
-  { value: "sidebar", label: "Sidebar", category: "annotation", description: "Pin variable details in a side panel." },
-  { value: "stepper", label: "Stepper", category: "interaction", description: "Step through numeric values." },
-  { value: "value_display", label: "Value Display", category: "visualisation", description: "Show the latest value clearly." },
-  { value: "status", label: "Status", category: "visualisation", description: "Show a compact current-state tile." },
-  { value: "percentage", label: "Percentage", category: "visualisation", description: "Render values as percentages." },
-  { value: "led", label: "LED", category: "visualisation", description: "Represent LED state visually." }
-];
-
-const widgetCategories = [
-  { value: "all", label: "All" },
-  { value: "interaction", label: "Interaction" },
-  { value: "visualisation", label: "Visualisation" },
-  { value: "annotation", label: "Annotation" }
-];
+import { useMemo, useState } from "react";
 
 export default function DashboardWidgetModal({ action, dashboardId, variableOptions }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("widgets");
   const [searchTerm, setSearchTerm] = useState("");
-  const [category, setCategory] = useState("all");
-  const [widgetType, setWidgetType] = useState("switch");
   const [tileName, setTileName] = useState("Switch");
   const [selectedVariableId, setSelectedVariableId] = useState("");
-
-  const selectedVariable = useMemo(
-    () => variableOptions.find((item) => String(item.variableId) === selectedVariableId) || null,
-    [selectedVariableId, variableOptions]
-  );
-
-  const filteredWidgets = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-    return widgetOptions.filter((option) => {
-      const matchesCategory = category === "all" || option.category === category;
-      const matchesSearch =
-        !normalizedSearch ||
-        option.label.toLowerCase().includes(normalizedSearch) ||
-        option.description.toLowerCase().includes(normalizedSearch);
-
-      return matchesCategory && matchesSearch;
-    });
-  }, [category, searchTerm]);
 
   const filteredVariables = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -61,12 +22,8 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
     });
   }, [searchTerm, variableOptions]);
 
-  useEffect(() => {
-    const selectedWidget = widgetOptions.find((option) => option.value === widgetType);
-    if (selectedWidget) {
-      setTileName(selectedWidget.label);
-    }
-  }, [widgetType]);
+  const selectedVariable =
+    variableOptions.find((item) => String(item.variableId) === selectedVariableId) || null;
 
   return (
     <>
@@ -76,115 +33,79 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
 
       {isOpen ? (
         <div className="widgetModalOverlay" onClick={() => setIsOpen(false)}>
-          <div className="widgetModal widgetModalLarge" onClick={(event) => event.stopPropagation()}>
+          <div className="widgetModal widgetModalCompact" onClick={(event) => event.stopPropagation()}>
             <div className="widgetModalTopBar">
               <button className="dashboardAddButton dashboardAddButtonActive" type="button">
-                Add
+                Add Switch
               </button>
             </div>
 
-            <div className="widgetModalShell">
-              <div className="widgetModalPanel">
-                <div className="widgetModalTabs">
-                  <button
-                    className={`widgetModalTab ${activeTab === "widgets" ? "widgetModalTabActive" : ""}`}
-                    type="button"
-                    onClick={() => setActiveTab("widgets")}
-                  >
-                    Widgets
-                  </button>
-                  <button
-                    className={`widgetModalTab ${activeTab === "things" ? "widgetModalTabActive" : ""}`}
-                    type="button"
-                    onClick={() => setActiveTab("things")}
-                  >
-                    Things
-                  </button>
+            <div className="widgetModalSimple">
+              <section className="widgetModalPanel">
+                <div className="widgetSimpleHeader">
+                  <strong>Switch Only</strong>
+                  <p className="sectionCopy">Pick one linked switch variable for this dashboard tile.</p>
                 </div>
 
                 <div className="widgetSearchRow">
                   <input
                     className="widgetSearchInput"
-                    placeholder={activeTab === "widgets" ? "Search widget or variable type" : "Search things or variables"}
+                    placeholder="Search things or switch variables"
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
                   />
                 </div>
 
-                {activeTab === "widgets" ? (
-                  <>
-                    <div className="widgetCategoryRow">
-                      {widgetCategories.map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          className={`widgetCategoryChip ${category === option.value ? "widgetCategoryChipActive" : ""}`}
-                          onClick={() => setCategory(option.value)}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
+                <div className="thingPickerGrid">
+                  {filteredVariables.length > 0 ? (
+                    filteredVariables.map((variable) => (
+                      <button
+                        key={variable.variableId}
+                        type="button"
+                        className={`thingPickerCard ${
+                          String(variable.variableId) === selectedVariableId ? "thingPickerCardActive" : ""
+                        }`}
+                        onClick={() => {
+                          setSelectedVariableId(String(variable.variableId));
+                          setTileName(variable.variableName || "Switch");
+                        }}
+                      >
+                        <strong>{variable.variableName}</strong>
+                        <span>{variable.thingName}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="historyCard">
+                      <strong>No switch variables found</strong>
+                      <p className="sectionCopy">Create a Thing switch first, then link it here.</p>
                     </div>
-
-                    <div className="widgetPickerGrid widgetPickerGridLarge">
-                      {filteredWidgets.map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          className={`widgetOptionCard widgetOptionCardLarge ${
-                            widgetType === option.value ? "widgetOptionCardActive" : ""
-                          }`}
-                          onClick={() => setWidgetType(option.value)}
-                        >
-                          <strong>{option.label}</strong>
-                          <span>{option.description}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <div className="thingPickerGrid">
-                    {filteredVariables.length > 0 ? (
-                      filteredVariables.map((variable) => (
-                        <button
-                          key={variable.variableId}
-                          type="button"
-                          className={`thingPickerCard ${
-                            String(variable.variableId) === selectedVariableId ? "thingPickerCardActive" : ""
-                          }`}
-                          onClick={() => setSelectedVariableId(String(variable.variableId))}
-                        >
-                          <strong>{variable.variableName}</strong>
-                          <span>{variable.thingName}</span>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="historyCard">
-                        <strong>No matching variables</strong>
-                        <p className="sectionCopy">Try another search or create variables in Things first.</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              </section>
 
               <aside className="widgetPreviewPanel">
                 <strong>Widget Setup</strong>
-                <p className="sectionCopy">Pick a widget, link a Thing variable, and save it to the dashboard.</p>
+                <p className="sectionCopy">Only switch widgets are available for now.</p>
 
                 <form action={action} className="widgetModalForm widgetModalFormStack">
                   <input type="hidden" name="dashboardId" value={dashboardId} />
-                  <input type="hidden" name="tileType" value={widgetType} />
+                  <input type="hidden" name="tileType" value="switch" />
                   <input type="hidden" name="linkedThingId" value={selectedVariable?.thingId || ""} />
 
                   <label className="thingField">
                     <span>Widget</span>
-                    <input className="input" value={widgetOptions.find((option) => option.value === widgetType)?.label || ""} readOnly />
+                    <input className="input" value="Switch" readOnly />
                   </label>
 
                   <label className="thingField">
                     <span>Widget Name</span>
-                    <input className="input" name="tileName" value={tileName} onChange={(event) => setTileName(event.target.value)} required />
+                    <input
+                      className="input"
+                      name="tileName"
+                      value={tileName}
+                      onChange={(event) => setTileName(event.target.value)}
+                      required
+                    />
                   </label>
 
                   <label className="thingField">
@@ -196,7 +117,7 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
                       onChange={(event) => setSelectedVariableId(event.target.value)}
                       required
                     >
-                      <option value="">Select Variable</option>
+                      <option value="">Select Switch</option>
                       {variableOptions.map((variable) => (
                         <option key={variable.variableId} value={variable.variableId}>
                           {variable.thingName} - {variable.variableName}
@@ -207,8 +128,8 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
 
                   <div className="widgetPreviewSummary">
                     <span>Selected</span>
-                    <strong>{widgetOptions.find((option) => option.value === widgetType)?.label || "-"}</strong>
-                    <strong>{selectedVariable ? `${selectedVariable.thingName} / ${selectedVariable.variableName}` : "No variable selected"}</strong>
+                    <strong>Switch</strong>
+                    <strong>{selectedVariable ? `${selectedVariable.thingName} / ${selectedVariable.variableName}` : "No switch selected"}</strong>
                   </div>
 
                   <div className="widgetModalActions">
@@ -216,7 +137,7 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
                       Cancel
                     </button>
                     <button className="button buttonOn" type="submit" disabled={!selectedVariableId}>
-                      Add Widget
+                      Add Switch
                     </button>
                   </div>
                 </form>

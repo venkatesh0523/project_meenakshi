@@ -12,6 +12,7 @@ import {
   addDashboardTileForUser,
   createDashboardForUser,
   createThingForUser,
+  deleteDashboardTileForUser,
   deleteDeviceForUser,
   deleteThingForUser,
   deleteThingVariableForUser,
@@ -23,6 +24,7 @@ import {
   listDevices,
   listKnownWifiNetworks,
   listThings,
+  moveDashboardTileForUser,
   provisionDeviceForUser,
   renameThingForUser,
   saveDeviceWifiConfiguration,
@@ -913,6 +915,54 @@ async function addDashboardTile(formData) {
   redirect(buildRedirect("/", { builder: "dashboards", dashboardId, authMessage: `Tile ${tileName} added.` }));
 }
 
+async function moveDashboardTile(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const dashboardId = normalizeField(formData.get("dashboardId"));
+  const tileId = normalizeField(formData.get("tileId"));
+  const direction = normalizeField(formData.get("direction"));
+
+  if (!dashboardId || !tileId || !["left", "right"].includes(direction)) {
+    redirect(buildRedirect("/", { builder: "dashboards", dashboardId, mode: "edit", authError: "Unable to move widget." }));
+  }
+
+  await moveDashboardTileForUser({
+    dashboardId: Number(dashboardId),
+    tileId: Number(tileId),
+    userId: user.id,
+    direction
+  });
+
+  revalidatePath("/");
+  redirect(buildRedirect("/", { builder: "dashboards", dashboardId, mode: "edit", authMessage: "Widget moved." }));
+}
+
+async function deleteDashboardTile(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const dashboardId = normalizeField(formData.get("dashboardId"));
+  const tileId = normalizeField(formData.get("tileId"));
+
+  if (!dashboardId || !tileId) {
+    redirect(buildRedirect("/", { builder: "dashboards", dashboardId, mode: "edit", authError: "Unable to delete widget." }));
+  }
+
+  const deleted = await deleteDashboardTileForUser({
+    dashboardId: Number(dashboardId),
+    tileId: Number(tileId),
+    userId: user.id
+  });
+
+  if (!deleted) {
+    redirect(buildRedirect("/", { builder: "dashboards", dashboardId, mode: "edit", authError: "Widget not found." }));
+  }
+
+  revalidatePath("/");
+  redirect(buildRedirect("/", { builder: "dashboards", dashboardId, mode: "edit", authMessage: "Widget deleted." }));
+}
+
 async function toggleDashboardTileVariable(formData) {
   "use server";
 
@@ -1602,7 +1652,35 @@ export default async function HomePage({ searchParams }) {
                                 <article className={`dashboardCanvasTile dashboardCanvasTile${tile.tile_type}`} key={tile.id}>
                                   <div className="dashboardCanvasTileHead">
                                     <strong>{formatDashboardTileTypeLabel(tile.tile_type)}</strong>
-                                    <span className="dashboardCanvasExample">Example</span>
+                                    {dashboardMode === "edit" ? (
+                                      <div className="dashboardTileEditActions">
+                                        <form action={moveDashboardTile}>
+                                          <input type="hidden" name="dashboardId" value={selectedDashboard.id} />
+                                          <input type="hidden" name="tileId" value={tile.id} />
+                                          <input type="hidden" name="direction" value="left" />
+                                          <button className="dashboardTileIconButton" type="submit" aria-label="Move left">
+                                            ←
+                                          </button>
+                                        </form>
+                                        <form action={moveDashboardTile}>
+                                          <input type="hidden" name="dashboardId" value={selectedDashboard.id} />
+                                          <input type="hidden" name="tileId" value={tile.id} />
+                                          <input type="hidden" name="direction" value="right" />
+                                          <button className="dashboardTileIconButton" type="submit" aria-label="Move right">
+                                            →
+                                          </button>
+                                        </form>
+                                        <form action={deleteDashboardTile}>
+                                          <input type="hidden" name="dashboardId" value={selectedDashboard.id} />
+                                          <input type="hidden" name="tileId" value={tile.id} />
+                                          <button className="dashboardTileDeleteButton" type="submit">
+                                            Delete
+                                          </button>
+                                        </form>
+                                      </div>
+                                    ) : (
+                                      <span className="dashboardCanvasExample">Example</span>
+                                    )}
                                   </div>
 
                                   <div className="dashboardCanvasTileBody">
