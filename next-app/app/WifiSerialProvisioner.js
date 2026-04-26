@@ -1,477 +1,42 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-
-function buildPortLabel(port) {
-  const info = typeof port?.getInfo === "function" ? port.getInfo() : {};
-  const vendor = info.usbVendorId ? `0x${info.usbVendorId.toString(16)}` : "USB";
-  const product = info.usbProductId ? `0x${info.usbProductId.toString(16)}` : "serial";
-  return `${vendor}:${product}`;
-}
+import { useMemo, useState } from "react";
 
 export default function WifiSerialProvisioner({
+  knownWifiNetworks = [],
   saveWifiAction
 }) {
-  const timeoutRef = useRef(null);
-  const helloRetryRef = useRef(null);
-  const helloAttemptCountRef = useRef(0);
-  const formRef = useRef(null);
-  const portRef = useRef(null);
-  const readerRef = useRef(null);
-  const writerRef = useRef(null);
-  const submitRequestedRef = useRef(false);
-  const boardReadyRef = useRef(false);
-
   const [step, setStep] = useState("detect");
   const [deviceName, setDeviceName] = useState("Twyla");
   const [selectedWifi, setSelectedWifi] = useState("");
   const [manualWifi, setManualWifi] = useState("");
   const [wifiPassword, setWifiPassword] = useState("");
-  const [serialSupported, setSerialSupported] = useState(false);
-  const [serialConnected, setSerialConnected] = useState(false);
-  const [serialBusy, setSerialBusy] = useState(false);
-  const [serialAction, setSerialAction] = useState("");
-  const [serialMessage, setSerialMessage] = useState("Connect your Arduino board with USB to continue.");
-  const [serialError, setSerialError] = useState("");
-  const [serialStatus, setSerialStatus] = useState("Idle");
-  const [portLabel, setPortLabel] = useState("USB");
-  const [serialNetworks, setSerialNetworks] = useState([]);
-  const [serialLogs, setSerialLogs] = useState([]);
-  const [boardReady, setBoardReady] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const networkOptions = useMemo(() => [...new Set(serialNetworks.filter(Boolean))], [serialNetworks]);
+  const networkOptions = useMemo(() => [...new Set((knownWifiNetworks || []).filter(Boolean))], [knownWifiNetworks]);
+  const activeWifi = manualWifi || selectedWifi;
 
-  const activeWifi = selectedWifi || manualWifi;
-  const canUseSerial = serialSupported && typeof window !== "undefined" && "isSecureContext" in window && window.isSecureContext;
-
-  useEffect(() => {
-    setSerialSupported(typeof navigator !== "undefined" && "serial" in navigator);
-  }, []);
-
-  useEffect(() => {
-    boardReadyRef.current = boardReady;
-  }, [boardReady]);
-
-  useEffect(() => {
-    return () => {
-      clearPendingTimeout();
-      clearHelloRetry();
-      void disconnectPort();
-    };
-  }, []);
-
-  function pushSerialLog(message) {
-    setSerialLogs((current) => {
-      if (current[current.length - 1] === message) {
-        return current;
-      }
-
-      return [...current, message].slice(-8);
-    });
-  }
-
-  function clearPendingTimeout() {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-  }
-
-  function clearHelloRetry() {
-    if (helloRetryRef.current) {
-      clearTimeout(helloRetryRef.current);
-      helloRetryRef.current = null;
-    }
-    helloAttemptCountRef.current = 0;
-  }
-
-  function startPendingTimeout(kind) {
-    clearPendingTimeout();
-    const timeoutMs = kind === "ready" ? 20000 : 12000;
-    timeoutRef.current = window.setTimeout(() => {
-      setSerialBusy(false);
-      setSerialAction("");
-
-      if (kind === "scan") {
-        setSerialStatus("Wi-Fi scan timed out");
-        setSerialMessage("The board did not return any Wi-Fi networks.");
-        setSerialError("Board did not answer Wi-Fi scan. Check that arduino_mqtt_device.ino is uploaded and Serial Monitor is closed.");
-        pushSerialLog("Timed out waiting for wifiNetworks from board.");
-        return;
-      }
-
-      if (kind === "ready") {
-        clearHelloRetry();
-        setSerialStatus("Board did not become ready");
-        setSerialMessage("The board connected over USB but did not send a ready signal.");
-        setSerialError("Board did not send boardReady. Re-upload arduino_mqtt_device.ino, reconnect the board, and keep Serial Monitor closed.");
-        pushSerialLog("Timed out waiting for boardReady from board.");
-        void disconnectPort();
-        return;
-      }
-
-      if (kind === "save") {
-        setSerialStatus("Board did not confirm Wi-Fi save");
-        setSerialMessage("The board did not confirm that Wi-Fi credentials were saved.");
-        setSerialError("Board did not answer saveWifi. Check the uploaded sketch, USB connection, and that no other app is using the serial port.");
-        pushSerialLog("Timed out waiting for wifiSaved from board.");
-      }
-    }, timeoutMs);
-  }
-
-  async function disconnectPort() {
-    submitRequestedRef.current = false;
-    clearPendingTimeout();
-    clearHelloRetry();
-
-    if (readerRef.current) {
-      try {
-        await readerRef.current.cancel();
-      } catch (error) {
-        // Ignore cancellation errors during teardown.
-      }
-      readerRef.current.releaseLock();
-      readerRef.current = null;
-    }
-
-    if (writerRef.current) {
-      writerRef.current.releaseLock();
-      writerRef.current = null;
-    }
-
-    if (portRef.current) {
-      try {
-        await portRef.current.close();
-      } catch (error) {
-        // Ignore close errors during teardown.
-      }
-      portRef.current = null;
-    }
-
-    setSerialConnected(false);
-    setSerialStatus("Disconnected");
-    setSerialAction("");
-    setBoardReady(false);
-  }
-
-  async function sendSerialCommand(payload) {
-    if (!writerRef.current) {
-      throw new Error("Serial connection is not ready.");
-    }
-
-    const message = `${JSON.stringify(payload)}\n`;
-    const encoded = new TextEncoder().encode(message);
-    await writerRef.current.write(encoded);
-  }
-
-  function handleBoardMessage(message) {
-    if (message.type === "boardReady") {
-      clearPendingTimeout();
-      clearHelloRetry();
-      setBoardReady(true);
-      setSerialBusy(false);
-      setSerialAction("");
-      setSerialStatus("Board ready");
-      setSerialError("");
-      setSerialMessage("Board is ready. You can continue to scan Wi-Fi networks.");
-      if (message.ssid) {
-        setManualWifi(message.ssid);
-        setSelectedWifi(message.ssid);
-      }
-      pushSerialLog("Board sent ready handshake.");
-      return;
-    }
-
-    if (message.type === "wifiNetworks") {
-      clearPendingTimeout();
-      const nextNetworks = Array.isArray(message.networks)
-        ? message.networks.map((network) => network?.ssid).filter(Boolean)
-        : [];
-
-      setSerialNetworks(nextNetworks);
-      setSerialBusy(false);
-      setSerialAction("");
-      setSerialStatus("Wi-Fi scan complete");
-      setSerialMessage(nextNetworks.length > 0 ? "Wi-Fi scan complete. Choose a network below." : "No Wi-Fi networks found.");
-      setSerialError("");
-      pushSerialLog(nextNetworks.length > 0 ? `Board returned ${nextNetworks.length} Wi-Fi networks.` : "Board returned no Wi-Fi networks.");
-      return;
-    }
-
-    if (message.type === "wifiSaved") {
-      clearPendingTimeout();
-      setSerialBusy(false);
-      setSerialError("");
-      setSerialAction("");
-      setSerialStatus("Wi-Fi saved on board");
-      setSerialMessage(message.message || "Wi-Fi saved on the board. Finishing cloud provisioning...");
-      pushSerialLog(message.message || "Board confirmed Wi-Fi credentials were saved.");
-
-      if (!submitRequestedRef.current && formRef.current) {
-        submitRequestedRef.current = true;
-        setSerialStatus("Cloud provisioning started");
-        pushSerialLog("Submitting cloud provisioning form.");
-        formRef.current.requestSubmit();
-      }
-      return;
-    }
-
-    if (message.type === "wifiError") {
-      clearPendingTimeout();
-      setSerialBusy(false);
-      setSerialAction("");
-      setSerialStatus("Board reported an error");
-      setSerialError(message.message || "Unable to save Wi-Fi on the board.");
-      pushSerialLog(message.message || "Board reported a Wi-Fi error.");
-      return;
-    }
-  }
-
-  function handlePlainSerialLog(message) {
-    if (message.includes("Booting Arduino device")) {
-      setSerialStatus("Board booting");
-      setSerialMessage("Board is booting over USB. Waiting for ready signal...");
-      return;
-    }
-
-    if (message.includes("Connecting to WiFi SSID")) {
-      setSerialStatus("Board starting network");
-      setSerialMessage("Board is starting its Wi-Fi stack. Waiting for ready signal...");
-    }
-  }
-
-  async function readSerialLoop(port) {
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (port.readable) {
-      const reader = port.readable.getReader();
-      readerRef.current = reader;
-
-      try {
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) {
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed) {
-              pushSerialLog(trimmed);
-              handlePlainSerialLog(trimmed);
-            }
-            if (!trimmed.startsWith("{")) {
-              continue;
-            }
-
-            try {
-              const parsed = JSON.parse(trimmed);
-              handleBoardMessage(parsed);
-            } catch (error) {
-              // Ignore non-JSON serial logs.
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-        if (readerRef.current === reader) {
-          readerRef.current = null;
-        }
-      }
-    }
-  }
-
-  async function connectBoard() {
-    if (!canUseSerial) {
-      setSerialError("USB provisioning requires Web Serial, which works on localhost or HTTPS in a supported browser.");
-      return;
-    }
-
-    if (portRef.current || readerRef.current || writerRef.current) {
-      await disconnectPort();
-    }
-
-    setSerialBusy(true);
-    setSerialAction("connect");
-    setSerialError("");
-    setBoardReady(false);
-    setSerialStatus("Waiting for browser permission");
-    setSerialMessage("Waiting for board permission...");
-    setSerialLogs([]);
-
-    try {
-      const port = await navigator.serial.requestPort();
-      await port.open({ baudRate: 115200 });
-      if (typeof port.setSignals === "function") {
-        try {
-          await port.setSignals({ dataTerminalReady: true, requestToSend: false });
-        } catch (error) {
-          pushSerialLog("Unable to set serial control signals; continuing anyway.");
-        }
-      }
-
-      portRef.current = port;
-      writerRef.current = port.writable.getWriter();
-      setPortLabel(buildPortLabel(port));
-      setSerialConnected(true);
-      setSerialBusy(false);
-      setSerialAction("");
-      setSerialStatus("Waiting for board startup");
-      setSerialMessage("Device connected. Waiting for the board to finish booting.");
-      pushSerialLog(`Connected to board on ${buildPortLabel(port)}.`);
-      setStep("confirm");
-      startPendingTimeout("ready");
-
-      void readSerialLoop(port).catch((error) => {
-        setSerialError(`Serial connection lost: ${error.message}`);
-        setSerialBusy(false);
-        setSerialAction("");
-        setSerialConnected(false);
-        setSerialStatus("Serial connection lost");
-        pushSerialLog(`Serial connection lost: ${error.message}`);
-        clearPendingTimeout();
-        clearHelloRetry();
-      });
-
-      const sendHello = async () => {
-        await sendSerialCommand({ type: "hello" });
-        helloAttemptCountRef.current += 1;
-        pushSerialLog(
-          helloAttemptCountRef.current === 1
-            ? "Sent hello handshake to board."
-            : `Retrying hello handshake (${helloAttemptCountRef.current}).`
-        );
-      };
-
-      const scheduleHelloRetry = () => {
-        clearHelloRetry();
-        helloRetryRef.current = window.setTimeout(async () => {
-          if (!portRef.current || !writerRef.current || boardReadyRef.current) {
-            clearHelloRetry();
-            return;
-          }
-
-          if (helloAttemptCountRef.current >= 3) {
-            clearHelloRetry();
-            clearPendingTimeout();
-            setSerialBusy(false);
-            setSerialAction("");
-            setSerialStatus("Board did not become ready");
-            setSerialMessage("The board connected over USB but did not send a ready signal.");
-            setSerialError("Board did not send boardReady. Re-upload arduino_mqtt_device.ino, reconnect the board, and keep Serial Monitor closed.");
-            pushSerialLog("Stopped retrying hello handshake after 3 attempts.");
-            void disconnectPort();
-            return;
-          }
-
-          try {
-            await sendHello();
-            scheduleHelloRetry();
-          } catch (error) {
-            clearHelloRetry();
-            clearPendingTimeout();
-            setSerialBusy(false);
-            setSerialAction("");
-            setSerialStatus("Handshake failed");
-            setSerialError(error.message || "Unable to talk to the board over serial.");
-            pushSerialLog(error.message || "Unable to talk to the board over serial.");
-            void disconnectPort();
-          }
-        }, 2000);
-      };
-
-      await new Promise((resolve) => {
-        window.setTimeout(resolve, 1200);
-      });
-
-      await sendHello();
-      scheduleHelloRetry();
-    } catch (error) {
-      clearHelloRetry();
-      setSerialBusy(false);
-      setSerialAction("");
-      setSerialStatus("Connection failed");
-      setSerialError(error.message || "Unable to connect to the board.");
-      pushSerialLog(error.message || "Unable to connect to the board.");
-    }
-  }
-
-  async function scanNetworks() {
-    if (!serialConnected) {
-      setSerialError("Connect the board first.");
-      return;
-    }
-
-    if (!boardReady) {
-      setSerialError("Board is not ready yet. Wait for the ready message or reconnect the board.");
-      return;
-    }
-
+  function startSetup() {
     setStep("network");
-    setSerialBusy(true);
-    setSerialAction("scan");
-    setSerialError("");
-    setSerialStatus("Scanning Wi-Fi");
-    setSerialMessage("Scanning Wi-Fi networks from the board...");
-    pushSerialLog("Requested Wi-Fi network scan from board.");
-
-    try {
-      await sendSerialCommand({ type: "scanWifi" });
-      startPendingTimeout("scan");
-    } catch (error) {
-      clearPendingTimeout();
-      setSerialBusy(false);
-      setSerialAction("");
-      setSerialStatus("Wi-Fi scan failed");
-      setSerialError(error.message || "Unable to scan Wi-Fi networks.");
-      pushSerialLog(error.message || "Unable to scan Wi-Fi networks.");
-    }
+    setFormError("");
   }
 
-  async function saveWifiToBoard() {
-    if (!serialConnected) {
-      setSerialError("Connect the board first.");
+  function handleWifiChoice(network) {
+    setSelectedWifi(network);
+    setManualWifi(network);
+    setFormError("");
+  }
+
+  function handleSubmit(event) {
+    if (!activeWifi.trim() || !wifiPassword.trim()) {
+      event.preventDefault();
+      setFormError("Enter a Wi-Fi name and password before continuing.");
       return;
     }
 
-    if (!boardReady) {
-      setSerialError("Board is not ready yet. Wait for the ready message or reconnect the board.");
-      return;
-    }
-
-    if (!activeWifi || !wifiPassword) {
-      setSerialError("Choose a Wi-Fi network and enter the password.");
-      return;
-    }
-
-    submitRequestedRef.current = false;
-    setSerialBusy(true);
-    setSerialAction("save");
-    setSerialError("");
-    setSerialStatus("Sending Wi-Fi credentials");
-    setSerialMessage("Pushing Wi-Fi settings to the board...");
-    pushSerialLog(`Sending Wi-Fi credentials for ${activeWifi}.`);
-
-    try {
-      await sendSerialCommand({
-        type: "saveWifi",
-        ssid: activeWifi,
-        password: wifiPassword
-      });
-      startPendingTimeout("save");
-    } catch (error) {
-      clearPendingTimeout();
-      setSerialBusy(false);
-      setSerialAction("");
-      setSerialStatus("Provisioning failed");
-      setSerialError(error.message || "Unable to send Wi-Fi settings to the board.");
-      pushSerialLog(error.message || "Unable to send Wi-Fi settings to the board.");
-    }
+    setIsSubmitting(true);
+    setFormError("");
   }
 
   return (
@@ -489,87 +54,34 @@ export default function WifiSerialProvisioner({
           </div>
 
           <div className="serialWizardIntro">
-            <h4>Connect your board to your computer</h4>
+            <h4>Prepare your board</h4>
             <p>
-              This flow now talks to your Arduino board over USB. Grant serial access, and we will scan Wi-Fi networks
-              directly from the device.
+              This setup now uses a reliable flow with no browser USB permission. We will save the device,
+              update the Arduino sketch file automatically, and then you can upload that sketch from the
+              Arduino IDE.
             </p>
           </div>
 
           <div className="serialWizardSummary">
-            <span>USB provisioning</span>
-            <strong>{serialStatus}</strong>
-            <p>{serialMessage}</p>
+            <span>Provisioning mode</span>
+            <strong>Sketch update flow</strong>
+            <p>No serial permission is required on this page.</p>
           </div>
 
           <div className="serialWizardActions serialWizardActionsStart">
-            <button className="button buttonOn serialWizardPrimary" type="button" onClick={connectBoard} disabled={serialBusy}>
-              {serialAction === "connect" ? "Connecting..." : serialConnected ? "Reconnect Board" : "Connect Board"}
+            <button className="button buttonOn serialWizardPrimary" type="button" onClick={startSetup}>
+              Continue
             </button>
           </div>
 
           <div className="serialWizardTable">
             <div className="serialWizardTableHead">
-              <span>Type</span>
-              <span>USB Port</span>
+              <span>Board</span>
+              <span>Connection</span>
             </div>
-            <button type="button" className="serialWizardTableRow" onClick={connectBoard} disabled={serialBusy}>
-              <strong>{serialConnected ? "Arduino UNO R4 WiFi" : "Click to connect Arduino board"}</strong>
-              <span>{serialConnected ? portLabel : serialAction === "connect" ? "Connecting..." : "USB"}</span>
-            </button>
-          </div>
-        </section>
-      ) : null}
-
-      {step === "confirm" ? (
-        <section className="serialWizardCard">
-          <div className="serialWizardBanner">
-            <strong>Device detection (Cable)</strong>
-            <span aria-hidden="true">⇢</span>
-          </div>
-
-          <div className="serialWizardConnected">
-            <div className="serialWizardIllustration serialWizardIllustrationConnected" aria-hidden="true">
-              <span className="serialWizardCable" />
-              <span className="serialWizardBoard serialWizardBoardLarge">▣</span>
-            </div>
-
-            <div className="serialWizardIntro">
-              <h4>Arduino UNO R4 WiFi connected</h4>
-              <p>{serialMessage}</p>
-            </div>
-
-            <div className="serialWizardSummary">
-              <span>Board status</span>
-              <strong>{serialStatus}</strong>
-              <p>Port: {portLabel}</p>
-            </div>
-
-            <div className="serialWizardActions">
-              <button className="button buttonGhost serialWizardSecondary" type="button" onClick={() => setStep("detect")}>
-                Change Device
-              </button>
-              <button className="button buttonGhost serialWizardSecondary" type="button" onClick={connectBoard} disabled={serialBusy}>
-                {serialAction === "connect" ? "Connecting..." : "Reconnect Board"}
-              </button>
-              <button className="button buttonOn serialWizardPrimary" type="button" onClick={scanNetworks} disabled={serialBusy}>
-                {serialAction === "scan" ? "Scanning..." : "Continue"}
-              </button>
-            </div>
-
-            <div className="serialWizardLogs">
-              <strong>Board messages</strong>
-              <div className="serialWizardLogList">
-                {serialLogs.length > 0 ? (
-                  serialLogs.map((log, index) => (
-                    <div key={`${log}-${index}`} className="serialWizardLogItem">
-                      {log}
-                    </div>
-                  ))
-                ) : (
-                  <div className="serialWizardLogItem">No board messages yet.</div>
-                )}
-              </div>
+            <div className="serialWizardTableRow">
+              <strong>Arduino UNO R4 WiFi</strong>
+              <span>Manual upload after save</span>
             </div>
           </div>
         </section>
@@ -580,9 +92,9 @@ export default function WifiSerialProvisioner({
           <div className="serialWizardDeviceHeader">
             <div>
               <strong>Arduino UNO R4 WiFi - {deviceName}</strong>
-              <span className="serialWizardConnectedBadge">Connected</span>
+              <span className="serialWizardConnectedBadge">Ready to save</span>
             </div>
-            <button className="button buttonGhost serialWizardCompactButton" type="button" onClick={() => setStep("confirm")}>
+            <button className="button buttonGhost serialWizardCompactButton" type="button" onClick={() => setStep("detect")}>
               Show less
             </button>
           </div>
@@ -603,23 +115,20 @@ export default function WifiSerialProvisioner({
             <div className="serialWizardStep">
               <span className="serialWizardStepMarker serialWizardStepMarkerActive">2</span>
               <div className="serialWizardStepContent">
-                <form ref={formRef} action={saveWifiAction} className="serialWizardNetworkCard">
+                <form action={saveWifiAction} className="serialWizardNetworkCard" onSubmit={handleSubmit}>
                   <input name="deviceType" type="hidden" value="arduino" />
                   <input name="boardModel" type="hidden" value="Arduino UNO R4 WiFi" />
                   <input name="fqbn" type="hidden" value="arduino:renesas_uno:unor4wifi" />
                   <input name="location" type="hidden" value="Greenhouse Bay A" />
-                  <input name="serialNumber" type="hidden" value={portLabel} />
+                  <input name="serialNumber" type="hidden" value="USB:manual-upload" />
                   <input name="deviceName" type="hidden" value={deviceName} />
                   <input name="selectedWifi" type="hidden" value={selectedWifi} />
 
                   <div className="serialWizardNetworkHeader">
                     <div>
                       <strong>Select a network</strong>
-                      <p>{serialMessage}</p>
+                      <p>Choose a known Wi-Fi network or type the SSID manually.</p>
                     </div>
-                    <button className="button buttonGhost serialWizardCompactButton" type="button" onClick={scanNetworks} disabled={serialBusy}>
-                      {serialAction === "scan" ? "Scanning..." : "Scan Again"}
-                    </button>
                   </div>
 
                   <div className="serialWizardNetworkList">
@@ -627,11 +136,8 @@ export default function WifiSerialProvisioner({
                       <button
                         key={network}
                         type="button"
-                        className={`serialWizardNetworkRow ${selectedWifi === network ? "serialWizardNetworkRowActive" : ""}`}
-                        onClick={() => {
-                          setSelectedWifi(network);
-                          setManualWifi(network);
-                        }}
+                        className={`serialWizardNetworkRow ${activeWifi === network ? "serialWizardNetworkRowActive" : ""}`}
+                        onClick={() => handleWifiChoice(network)}
                       >
                         <span className="serialWizardWifiIcon" aria-hidden="true">◔</span>
                         <strong>{network}</strong>
@@ -641,12 +147,12 @@ export default function WifiSerialProvisioner({
 
                   {networkOptions.length === 0 ? (
                     <p className="banner bannerError">
-                      No scanned Wi-Fi networks yet. Click `Scan Again` or enter the Wi-Fi name manually.
+                      No saved Wi-Fi names found yet. Enter the Wi-Fi name manually below.
                     </p>
                   ) : null}
 
                   <label className="fieldGroup">
-                    <span className="fieldLabel">Or enter Wi-Fi name manually</span>
+                    <span className="fieldLabel">Wi-Fi name</span>
                     <input
                       className="input"
                       name="manualWifi"
@@ -655,7 +161,9 @@ export default function WifiSerialProvisioner({
                       onChange={(event) => {
                         setManualWifi(event.target.value);
                         setSelectedWifi(event.target.value);
+                        setFormError("");
                       }}
+                      required
                     />
                   </label>
 
@@ -667,48 +175,42 @@ export default function WifiSerialProvisioner({
                       placeholder="Enter Wi-Fi password"
                       type="password"
                       value={wifiPassword}
-                      onChange={(event) => setWifiPassword(event.target.value)}
+                      onChange={(event) => {
+                        setWifiPassword(event.target.value);
+                        setFormError("");
+                      }}
                       required
                     />
                   </label>
 
                   <div className="serialWizardSummary">
-                    <span>Cloud provisioning</span>
+                    <span>Sketch update</span>
                     <strong>{activeWifi ? `Selected network: ${activeWifi}` : "Choose a network to continue"}</strong>
-                    <p>{serialStatus}: {serialMessage}</p>
+                    <p>
+                      Saving here will generate the device ID and secret, update
+                      <code> arduino/arduino_mqtt_device.ino </code>
+                      automatically, and then you can upload it from the Arduino IDE.
+                    </p>
                   </div>
 
-                  {serialError ? <p className="banner bannerError">{serialError}</p> : null}
-                  {!serialError && serialStatus === "Cloud provisioning started" ? (
-                    <p className="banner bannerSuccess">Board confirmed Wi-Fi save. Waiting for cloud provisioning to finish.</p>
-                  ) : null}
-                  {!canUseSerial ? (
-                    <p className="banner bannerError">
-                      USB provisioning requires Web Serial in a secure context. Use `localhost` or HTTPS in Chrome/Edge.
-                    </p>
-                  ) : null}
+                  {formError ? <p className="banner bannerError">{formError}</p> : null}
 
                   <div className="serialWizardLogCard">
-                    <strong>Board messages</strong>
+                    <strong>Next step after save</strong>
                     <div className="serialWizardLogList">
-                      {serialLogs.length > 0 ? (
-                        serialLogs.map((log, index) => (
-                          <code className="serialWizardLogLine" key={`${index}-${log}`}>
-                            {log}
-                          </code>
-                        ))
-                      ) : (
-                        <span className="serialWizardLogEmpty">No board messages yet.</span>
-                      )}
+                      <span className="serialWizardLogEmpty">1. Save the device here.</span>
+                      <span className="serialWizardLogEmpty">2. Open the updated sketch in Arduino IDE.</span>
+                      <span className="serialWizardLogEmpty">3. Upload it to the UNO R4 WiFi.</span>
+                      <span className="serialWizardLogEmpty">4. Refresh the Devices page and wait for the board to come online.</span>
                     </div>
                   </div>
 
                   <div className="connectDeviceActions">
-                    <button className="button buttonGhost serialWizardSecondary" type="button" onClick={connectBoard} disabled={serialBusy}>
-                      {serialAction === "connect" ? "Connecting..." : "Reconnect Board"}
+                    <button className="button buttonGhost serialWizardSecondary" type="button" onClick={() => setStep("detect")} disabled={isSubmitting}>
+                      Back
                     </button>
-                    <button className="button buttonOn serialWizardPrimary" type="button" onClick={saveWifiToBoard} disabled={serialBusy}>
-                      {serialAction === "save" ? "Provisioning..." : "Continue"}
+                    <button className="button buttonOn serialWizardPrimary" type="submit" disabled={isSubmitting}>
+                      {isSubmitting ? "Saving..." : "Save Device and Update Sketch"}
                     </button>
                   </div>
                 </form>

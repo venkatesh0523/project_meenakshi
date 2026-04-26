@@ -377,7 +377,7 @@ async function saveAndConnectArduinoDevice(formData) {
   revalidatePath("/");
   redirect(
     buildRedirect("/", {
-      authMessage: `Arduino ${deviceId} saved with matching secret. The board will show online after its next heartbeat.`,
+      authMessage: `Arduino ${deviceId} saved and the sketch file was updated. Upload arduino_mqtt_device.ino to the board, then refresh this page to see it online.`,
       selectedDevice: deviceId
     })
   );
