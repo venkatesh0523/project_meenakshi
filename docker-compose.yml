@@ -15,9 +15,12 @@ services:
       ARDUINO_CLOUD_HOST: ${ARDUINO_CLOUD_HOST:-141.148.239.103}
       ARDUINO_CLOUD_PORT: ${ARDUINO_CLOUD_PORT:-3000}
       ARDUINO_CLOUD_USE_SSL: ${ARDUINO_CLOUD_USE_SSL:-false}
+      ARDUINO_SKETCH_ROOT: /workspace/arduino
       CPP_API_URL: http://cpp-api:8080
     ports:
       - "3000:3000"
+    volumes:
+      - ./arduino:/workspace/arduino
     restart: unless-stopped
 
   cpp-api:

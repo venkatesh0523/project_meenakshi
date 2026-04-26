@@ -13,11 +13,14 @@ export default function WifiSerialProvisioner({
   saveWifiAction
 }) {
   const timeoutRef = useRef(null);
+  const helloRetryRef = useRef(null);
+  const helloAttemptCountRef = useRef(0);
   const formRef = useRef(null);
   const portRef = useRef(null);
   const readerRef = useRef(null);
   const writerRef = useRef(null);
   const submitRequestedRef = useRef(false);
+  const boardReadyRef = useRef(false);
 
   const [step, setStep] = useState("detect");
   const [deviceName, setDeviceName] = useState("Twyla");
@@ -34,6 +37,7 @@ export default function WifiSerialProvisioner({
   const [portLabel, setPortLabel] = useState("USB");
   const [serialNetworks, setSerialNetworks] = useState([]);
   const [serialLogs, setSerialLogs] = useState([]);
+  const [boardReady, setBoardReady] = useState(false);
 
   const networkOptions = useMemo(() => [...new Set(serialNetworks.filter(Boolean))], [serialNetworks]);
 
@@ -45,14 +49,25 @@ export default function WifiSerialProvisioner({
   }, []);
 
   useEffect(() => {
+    boardReadyRef.current = boardReady;
+  }, [boardReady]);
+
+  useEffect(() => {
     return () => {
       clearPendingTimeout();
+      clearHelloRetry();
       void disconnectPort();
     };
   }, []);
 
   function pushSerialLog(message) {
-    setSerialLogs((current) => [...current, message].slice(-8));
+    setSerialLogs((current) => {
+      if (current[current.length - 1] === message) {
+        return current;
+      }
+
+      return [...current, message].slice(-8);
+    });
   }
 
   function clearPendingTimeout() {
@@ -62,8 +77,17 @@ export default function WifiSerialProvisioner({
     }
   }
 
+  function clearHelloRetry() {
+    if (helloRetryRef.current) {
+      clearTimeout(helloRetryRef.current);
+      helloRetryRef.current = null;
+    }
+    helloAttemptCountRef.current = 0;
+  }
+
   function startPendingTimeout(kind) {
     clearPendingTimeout();
+    const timeoutMs = kind === "ready" ? 20000 : 12000;
     timeoutRef.current = window.setTimeout(() => {
       setSerialBusy(false);
       setSerialAction("");
@@ -76,18 +100,29 @@ export default function WifiSerialProvisioner({
         return;
       }
 
+      if (kind === "ready") {
+        clearHelloRetry();
+        setSerialStatus("Board did not become ready");
+        setSerialMessage("The board connected over USB but did not send a ready signal.");
+        setSerialError("Board did not send boardReady. Re-upload arduino_mqtt_device.ino, reconnect the board, and keep Serial Monitor closed.");
+        pushSerialLog("Timed out waiting for boardReady from board.");
+        void disconnectPort();
+        return;
+      }
+
       if (kind === "save") {
         setSerialStatus("Board did not confirm Wi-Fi save");
         setSerialMessage("The board did not confirm that Wi-Fi credentials were saved.");
         setSerialError("Board did not answer saveWifi. Check the uploaded sketch, USB connection, and that no other app is using the serial port.");
         pushSerialLog("Timed out waiting for wifiSaved from board.");
       }
-    }, 12000);
+    }, timeoutMs);
   }
 
   async function disconnectPort() {
     submitRequestedRef.current = false;
     clearPendingTimeout();
+    clearHelloRetry();
 
     if (readerRef.current) {
       try {
@@ -116,6 +151,7 @@ export default function WifiSerialProvisioner({
     setSerialConnected(false);
     setSerialStatus("Disconnected");
     setSerialAction("");
+    setBoardReady(false);
   }
 
   async function sendSerialCommand(payload) {
@@ -129,6 +165,23 @@ export default function WifiSerialProvisioner({
   }
 
   function handleBoardMessage(message) {
+    if (message.type === "boardReady") {
+      clearPendingTimeout();
+      clearHelloRetry();
+      setBoardReady(true);
+      setSerialBusy(false);
+      setSerialAction("");
+      setSerialStatus("Board ready");
+      setSerialError("");
+      setSerialMessage("Board is ready. You can continue to scan Wi-Fi networks.");
+      if (message.ssid) {
+        setManualWifi(message.ssid);
+        setSelectedWifi(message.ssid);
+      }
+      pushSerialLog("Board sent ready handshake.");
+      return;
+    }
+
     if (message.type === "wifiNetworks") {
       clearPendingTimeout();
       const nextNetworks = Array.isArray(message.networks)
@@ -174,6 +227,19 @@ export default function WifiSerialProvisioner({
     }
   }
 
+  function handlePlainSerialLog(message) {
+    if (message.includes("Booting Arduino device")) {
+      setSerialStatus("Board booting");
+      setSerialMessage("Board is booting over USB. Waiting for ready signal...");
+      return;
+    }
+
+    if (message.includes("Connecting to WiFi SSID")) {
+      setSerialStatus("Board starting network");
+      setSerialMessage("Board is starting its Wi-Fi stack. Waiting for ready signal...");
+    }
+  }
+
   async function readSerialLoop(port) {
     const decoder = new TextDecoder();
     let buffer = "";
@@ -197,6 +263,7 @@ export default function WifiSerialProvisioner({
             const trimmed = line.trim();
             if (trimmed) {
               pushSerialLog(trimmed);
+              handlePlainSerialLog(trimmed);
             }
             if (!trimmed.startsWith("{")) {
               continue;
@@ -225,9 +292,14 @@ export default function WifiSerialProvisioner({
       return;
     }
 
+    if (portRef.current || readerRef.current || writerRef.current) {
+      await disconnectPort();
+    }
+
     setSerialBusy(true);
     setSerialAction("connect");
     setSerialError("");
+    setBoardReady(false);
     setSerialStatus("Waiting for browser permission");
     setSerialMessage("Waiting for board permission...");
     setSerialLogs([]);
@@ -235,6 +307,13 @@ export default function WifiSerialProvisioner({
     try {
       const port = await navigator.serial.requestPort();
       await port.open({ baudRate: 115200 });
+      if (typeof port.setSignals === "function") {
+        try {
+          await port.setSignals({ dataTerminalReady: true, requestToSend: false });
+        } catch (error) {
+          pushSerialLog("Unable to set serial control signals; continuing anyway.");
+        }
+      }
 
       portRef.current = port;
       writerRef.current = port.writable.getWriter();
@@ -242,10 +321,11 @@ export default function WifiSerialProvisioner({
       setSerialConnected(true);
       setSerialBusy(false);
       setSerialAction("");
-      setSerialStatus("Board connected");
-      setSerialMessage("Device connected. Ready to retrieve board information.");
+      setSerialStatus("Waiting for board startup");
+      setSerialMessage("Device connected. Waiting for the board to finish booting.");
       pushSerialLog(`Connected to board on ${buildPortLabel(port)}.`);
       setStep("confirm");
+      startPendingTimeout("ready");
 
       void readSerialLoop(port).catch((error) => {
         setSerialError(`Serial connection lost: ${error.message}`);
@@ -255,8 +335,64 @@ export default function WifiSerialProvisioner({
         setSerialStatus("Serial connection lost");
         pushSerialLog(`Serial connection lost: ${error.message}`);
         clearPendingTimeout();
+        clearHelloRetry();
       });
+
+      const sendHello = async () => {
+        await sendSerialCommand({ type: "hello" });
+        helloAttemptCountRef.current += 1;
+        pushSerialLog(
+          helloAttemptCountRef.current === 1
+            ? "Sent hello handshake to board."
+            : `Retrying hello handshake (${helloAttemptCountRef.current}).`
+        );
+      };
+
+      const scheduleHelloRetry = () => {
+        clearHelloRetry();
+        helloRetryRef.current = window.setTimeout(async () => {
+          if (!portRef.current || !writerRef.current || boardReadyRef.current) {
+            clearHelloRetry();
+            return;
+          }
+
+          if (helloAttemptCountRef.current >= 3) {
+            clearHelloRetry();
+            clearPendingTimeout();
+            setSerialBusy(false);
+            setSerialAction("");
+            setSerialStatus("Board did not become ready");
+            setSerialMessage("The board connected over USB but did not send a ready signal.");
+            setSerialError("Board did not send boardReady. Re-upload arduino_mqtt_device.ino, reconnect the board, and keep Serial Monitor closed.");
+            pushSerialLog("Stopped retrying hello handshake after 3 attempts.");
+            void disconnectPort();
+            return;
+          }
+
+          try {
+            await sendHello();
+            scheduleHelloRetry();
+          } catch (error) {
+            clearHelloRetry();
+            clearPendingTimeout();
+            setSerialBusy(false);
+            setSerialAction("");
+            setSerialStatus("Handshake failed");
+            setSerialError(error.message || "Unable to talk to the board over serial.");
+            pushSerialLog(error.message || "Unable to talk to the board over serial.");
+            void disconnectPort();
+          }
+        }, 2000);
+      };
+
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 1200);
+      });
+
+      await sendHello();
+      scheduleHelloRetry();
     } catch (error) {
+      clearHelloRetry();
       setSerialBusy(false);
       setSerialAction("");
       setSerialStatus("Connection failed");
@@ -268,6 +404,11 @@ export default function WifiSerialProvisioner({
   async function scanNetworks() {
     if (!serialConnected) {
       setSerialError("Connect the board first.");
+      return;
+    }
+
+    if (!boardReady) {
+      setSerialError("Board is not ready yet. Wait for the ready message or reconnect the board.");
       return;
     }
 
@@ -295,6 +436,11 @@ export default function WifiSerialProvisioner({
   async function saveWifiToBoard() {
     if (!serialConnected) {
       setSerialError("Connect the board first.");
+      return;
+    }
+
+    if (!boardReady) {
+      setSerialError("Board is not ready yet. Wait for the ready message or reconnect the board.");
       return;
     }
 
@@ -409,6 +555,21 @@ export default function WifiSerialProvisioner({
               <button className="button buttonOn serialWizardPrimary" type="button" onClick={scanNetworks} disabled={serialBusy}>
                 {serialAction === "scan" ? "Scanning..." : "Continue"}
               </button>
+            </div>
+
+            <div className="serialWizardLogs">
+              <strong>Board messages</strong>
+              <div className="serialWizardLogList">
+                {serialLogs.length > 0 ? (
+                  serialLogs.map((log, index) => (
+                    <div key={`${log}-${index}`} className="serialWizardLogItem">
+                      {log}
+                    </div>
+                  ))
+                ) : (
+                  <div className="serialWizardLogItem">No board messages yet.</div>
+                )}
+              </div>
             </div>
           </div>
         </section>

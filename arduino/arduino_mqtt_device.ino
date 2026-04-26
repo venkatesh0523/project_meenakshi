@@ -1,7 +1,5 @@
-#include <WiFi.h>
+#include <WiFiS3.h>
 #include <PubSubClient.h>
-#include <HTTPClient.h>
-#include <Preferences.h>
 
 const char* DEFAULT_WIFI_SSID = "Telia-B798AC";
 const char* DEFAULT_WIFI_PASSWORD = "pnK7x6nhh222h2wx";
@@ -11,26 +9,55 @@ const char* MQTT_HOST = "141.148.239.103";
 const int MQTT_PORT = 1883;
 const char* CLOUD_HOST = "141.148.239.103";
 const int CLOUD_PORT = 3000;
+const bool CLOUD_USE_SSL = false;
 
 const char* DEVICE_ID = "arduino-5d34d5fc-cf25-4e76-902e-f8536c8ec137";
 const char* DEVICE_SECRET = "yCjtQWdf5N_8EjiXsk4RE2jD";
 const int LED_PIN = 13;
 const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
+const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
 
-WiFiClient wifiClient;
-PubSubClient mqttClient(wifiClient);
-Preferences preferences;
+WiFiClient mqttWifiClient;
+PubSubClient mqttClient(mqttWifiClient);
 unsigned long lastHeartbeatAt = 0;
 unsigned long lastWifiRetryAt = 0;
+unsigned long lastReadyAnnouncementAt = 0;
+unsigned long lastMqttRetryAt = 0;
 String serialBuffer;
 String activeWifiSsid;
 String activeWifiPassword;
 
 String commandTopic = String("farm1/") + DEVICE_ID + "/cmd";
 String statusTopic = String("farm1/") + DEVICE_ID + "/status";
+void announceBoardReady() {
+  lastReadyAnnouncementAt = millis();
+  Serial.println("boardReady");
+  Serial.print("{\"type\":\"boardReady\",\"deviceId\":\"");
+  Serial.print(escapeJson(DEVICE_ID));
+  Serial.print("\",\"board\":\"Arduino UNO R4 WiFi\",\"ssid\":\"");
+  Serial.print(escapeJson(activeWifiSsid));
+  Serial.println("\"}");
+}
 
 bool connectWifi();
 void connectMqtt();
+
+String readHttpResponse(Client& client) {
+  String response;
+  const unsigned long startedAt = millis();
+
+  while (millis() - startedAt < 5000) {
+    while (client.available()) {
+      response += static_cast<char>(client.read());
+    }
+
+    if (!client.connected()) {
+      break;
+    }
+  }
+
+  return response;
+}
 
 String escapeJson(const String& value) {
   String escaped;
@@ -99,24 +126,16 @@ String readJsonString(const String& payload, const String& key) {
 }
 
 void loadWifiCredentials() {
-  preferences.begin("wifi", true);
-  activeWifiSsid = preferences.getString("ssid", DEFAULT_WIFI_SSID);
-  activeWifiPassword = preferences.getString("password", DEFAULT_WIFI_PASSWORD);
-  preferences.end();
+  activeWifiSsid = DEFAULT_WIFI_SSID;
+  activeWifiPassword = DEFAULT_WIFI_PASSWORD;
 }
 
 void saveWifiCredentials(const String& ssid, const String& password) {
-  preferences.begin("wifi", false);
-  preferences.putString("ssid", ssid);
-  preferences.putString("password", password);
-  preferences.end();
-
   activeWifiSsid = ssid;
   activeWifiPassword = password;
 }
 
 void scanWifiNetworks() {
-  WiFi.mode(WIFI_STA);
   const int networkCount = WiFi.scanNetworks();
 
   Serial.print("{\"type\":\"wifiNetworks\",\"networks\":[");
@@ -129,16 +148,17 @@ void scanWifiNetworks() {
     Serial.print(escapeJson(WiFi.SSID(index)));
     Serial.print("\",\"rssi\":");
     Serial.print(WiFi.RSSI(index));
-    Serial.print(",\"secure\":");
-    Serial.print(WiFi.encryptionType(index) == WIFI_AUTH_OPEN ? "false" : "true");
     Serial.print("}");
   }
   Serial.println("]}");
-
-  WiFi.scanDelete();
 }
 
 void handleSerialCommand(const String& command) {
+  if (command.indexOf("\"type\":\"hello\"") >= 0) {
+    announceBoardReady();
+    return;
+  }
+
   if (command.indexOf("\"type\":\"scanWifi\"") >= 0) {
     scanWifiNetworks();
     return;
@@ -159,7 +179,7 @@ void handleSerialCommand(const String& command) {
     Serial.println(". Reconnecting now.\"}");
 
     mqttClient.disconnect();
-    WiFi.disconnect(true);
+    WiFi.disconnect();
     delay(500);
 
     if (connectWifi()) {
@@ -190,27 +210,31 @@ void sendHeartbeat(const char* status) {
     return;
   }
 
-  HTTPClient http;
-  const String url =
-      String("http://") + CLOUD_HOST + ":" + String(CLOUD_PORT) + "/api/devices/" + DEVICE_ID +
-      "/heartbeat";
-  const String payload =
-      String("{\"deviceSecret\":\"") + DEVICE_SECRET + "\",\"status\":\"" + status + "\"}";
+  WiFiClient plainClient;
+  WiFiSSLClient sslClient;
+  Client& client = CLOUD_USE_SSL ? static_cast<Client&>(sslClient) : static_cast<Client&>(plainClient);
 
-  http.begin(url);
-  http.addHeader("Content-Type", "application/json");
-  const int httpCode = http.POST(payload);
-
-  Serial.print("Heartbeat POST ");
-  Serial.print(url);
-  Serial.print(" -> HTTP ");
-  Serial.println(httpCode);
-
-  if (httpCode > 0) {
-    Serial.println(http.getString());
+  if (!client.connect(CLOUD_HOST, CLOUD_PORT)) {
+    Serial.println("Heartbeat failed: could not connect to cloud");
+    return;
   }
 
-  http.end();
+  const String path = String("/api/devices/") + DEVICE_ID + "/heartbeat";
+  const String body =
+      String("{\"deviceSecret\":\"") + DEVICE_SECRET + "\",\"status\":\"" + status + "\"}";
+
+  client.print(String("POST ") + path + " HTTP/1.1\r\n");
+  client.print(String("Host: ") + CLOUD_HOST + ":" + String(CLOUD_PORT) + "\r\n");
+  client.print("Content-Type: application/json\r\n");
+  client.print(String("Content-Length: ") + String(body.length()) + "\r\n");
+  client.print("Connection: close\r\n\r\n");
+  client.print(body);
+
+  const String response = readHttpResponse(client);
+  client.stop();
+
+  Serial.println("Heartbeat response:");
+  Serial.println(response);
   lastHeartbeatAt = millis();
 }
 
@@ -253,7 +277,6 @@ bool connectWifi() {
 
   Serial.print("Connecting to WiFi SSID ");
   Serial.println(activeWifiSsid);
-  WiFi.mode(WIFI_STA);
   WiFi.begin(activeWifiSsid.c_str(), activeWifiPassword.c_str());
 
   const unsigned long startedAt = millis();
@@ -281,9 +304,14 @@ bool connectWifi() {
 }
 
 void connectMqtt() {
-  if (WiFi.status() != WL_CONNECTED) {
+  if (WiFi.status() != WL_CONNECTED || mqttClient.connected()) {
     return;
   }
+
+  if (millis() - lastMqttRetryAt < MQTT_RETRY_INTERVAL_MS) {
+    return;
+  }
+  lastMqttRetryAt = millis();
 
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(onMessage);
@@ -312,9 +340,15 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
 
   Serial.begin(115200);
-  delay(1000);
+  const unsigned long serialWaitStartedAt = millis();
+  while (!Serial && millis() - serialWaitStartedAt < 8000) {
+    delay(10);
+  }
+  delay(500);
   Serial.println("Booting Arduino device");
   loadWifiCredentials();
+  lastReadyAnnouncementAt = 0;
+  announceBoardReady();
 
   if (connectWifi()) {
     connectMqtt();
@@ -323,6 +357,10 @@ void setup() {
 
 void loop() {
   handleSerialInput();
+
+  if (millis() - lastReadyAnnouncementAt >= 2000) {
+    announceBoardReady();
+  }
 
   if (WiFi.status() != WL_CONNECTED && millis() - lastWifiRetryAt >= 10000) {
     lastWifiRetryAt = millis();

@@ -5,6 +5,9 @@ import { fileURLToPath } from "url";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(moduleDir, "..", "..");
+const sketchRoot = process.env.ARDUINO_SKETCH_ROOT?.trim()
+  ? path.resolve(process.env.ARDUINO_SKETCH_ROOT)
+  : path.join(repoRoot, "arduino");
 
 function escapeCString(value) {
   return String(value ?? "")
@@ -91,9 +94,9 @@ export async function updateProvisionedArduinoSketch({
 }) {
   const cloudTarget = resolveArduinoCloudTarget(appOrigin);
   const sketchPaths = [
-    path.join(repoRoot, "arduino", "arduino_mqtt_device.ino"),
-    path.join(repoRoot, "arduino", "uno_r4_wifi_cloud_device.ino"),
-    path.join(repoRoot, "arduino", "uno_r4_wifi_cloud_device", "uno_r4_wifi_cloud_device.ino")
+    path.join(sketchRoot, "arduino_mqtt_device.ino"),
+    path.join(sketchRoot, "uno_r4_wifi_cloud_device.ino"),
+    path.join(sketchRoot, "uno_r4_wifi_cloud_device", "uno_r4_wifi_cloud_device.ino")
   ];
 
   await Promise.all(
