@@ -189,10 +189,11 @@ function buildBuilderLink(sectionId, selectedDevice = "") {
   });
 }
 
-function buildThingPageLink(thingId = "") {
+function buildThingPageLink(thingId = "", tab = "variables") {
   return buildRedirect("/", {
     builder: "things",
-    thingId
+    thingId,
+    tab
   });
 }
 
@@ -776,6 +777,7 @@ export default async function HomePage({ searchParams }) {
   const builderSection = getBuilderSection(searchParams?.builder || "devices");
   const selectedDevice = searchParams?.selectedDevice || "";
   const selectedThingId = searchParams?.thingId || "";
+  const selectedThingTab = searchParams?.tab === "sketch" ? "sketch" : "variables";
   const selectedDashboardId = searchParams?.dashboardId || "";
   const dashboardMode = searchParams?.mode === "edit" ? "edit" : "view";
   const devices = user ? await listDevices(user.id) : [];
@@ -928,82 +930,114 @@ export default async function HomePage({ searchParams }) {
                     <div className="builderSection stackCompact">
                       {selectedThing ? (
                         <div className="thingDetailPage">
-                          <div className="sectionHeader">
-                            <div>
+                          <div className="thingCloudHeader">
+                            <div className="thingCloudBreadcrumbs">
+                              <a href={buildThingPageLink()}>Things</a>
+                              <span>›</span>
                               <strong>{selectedThing.thing_name}</strong>
-                              <p className="sectionCopy">Add, edit, and delete variables for this Thing.</p>
                             </div>
-                            <a className="button buttonGhost" href={buildThingPageLink()}>
-                              Back To Things
-                            </a>
+
+                            <div className="thingCloudTabs">
+                              <a
+                                className={`thingCloudTab ${selectedThingTab === "variables" ? "thingCloudTabActive" : ""}`}
+                                href={buildThingPageLink(selectedThing.thing_id, "variables")}
+                              >
+                                Data
+                              </a>
+                              <a
+                                className={`thingCloudTab ${selectedThingTab === "sketch" ? "thingCloudTabActive" : ""}`}
+                                href={buildThingPageLink(selectedThing.thing_id, "sketch")}
+                              >
+                                Sketch
+                              </a>
+                            </div>
                           </div>
 
-                          <article className="thingCard">
-                            <div className="thingRowGrid">
-                              <div className="thingRowCell">
-                                <span>Thing Name</span>
-                                <strong>{selectedThing.thing_name}</strong>
-                              </div>
-                              <div className="thingRowCell">
-                                <span>Device Sketch</span>
-                                <code>{selectedThing.device_sketch || "uno_r4_wifi_cloud_device"}</code>
-                              </div>
-                              <div className="thingRowCell">
-                                <span>Last Modified</span>
-                                <strong>{formatDeviceDate(selectedThing.updated_at)}</strong>
-                              </div>
-                              <div className="thingRowCell">
-                                <span>Creation Date</span>
-                                <strong>{formatDeviceDate(selectedThing.created_at)}</strong>
-                              </div>
-                            </div>
+                          {selectedThingTab === "variables" ? (
+                            <section className="thingCloudPanel">
+                              <div className="thingCloudPanelHead">
+                                <div>
+                                  <strong>Variables</strong>
+                                  <p className="sectionCopy">
+                                    Define the switch data your Thing exchanges with the device and shows on dashboards.
+                                  </p>
+                                </div>
 
-                            <div className="thingVariableSection">
-                              <div className="thingVariableSectionHeader">
-                                <strong>Variables</strong>
-                                <span>{selectedThing.variables?.length || 0} saved</span>
+                                <details className="thingCloudCreateVariable">
+                                  <summary className="button buttonOn">+ Variable</summary>
+                                  <div className="thingCloudCreatePanel">
+                                    <form action={addThingVariable} className="thingCloudVariableForm">
+                                      <input type="hidden" name="thingId" value={selectedThing.thing_id} />
+                                      <input className="input" name="variableName" placeholder="switch_1" required />
+                                      <button className="button buttonOn" type="submit">
+                                        Add Switch
+                                      </button>
+                                    </form>
+                                  </div>
+                                </details>
                               </div>
-
-                              <form action={addThingVariable} className="thingVariableForm">
-                                <input type="hidden" name="thingId" value={selectedThing.thing_id} />
-                                <input className="input" name="variableName" placeholder="switch_1" required />
-                                <button className="button buttonOn" type="submit">
-                                  Add Switch
-                                </button>
-                              </form>
 
                               {selectedThing.variables?.length ? (
-                                <div className="thingVariableEditorList">
+                                <div className="thingCloudTable">
+                                  <div className="thingCloudTableHead">
+                                    <span>Name</span>
+                                    <span>Last Value</span>
+                                    <span>Last Update</span>
+                                    <span>Actions</span>
+                                  </div>
+
                                   {selectedThing.variables.map((variable) => (
-                                    <article className="thingVariableEditorCard" key={variable.id}>
-                                      <form action={updateThingVariable} className="thingVariableEditForm">
-                                        <input type="hidden" name="thingId" value={selectedThing.thing_id} />
-                                        <input type="hidden" name="variableId" value={variable.id} />
-                                        <input className="input" name="variableName" defaultValue={variable.name} required />
-                                        <input className="input" value="Switch" readOnly />
-                                        <input className="input" value="Read Write" readOnly />
-                                        <button className="button buttonGhost" type="submit">
-                                          Save
-                                        </button>
-                                      </form>
-                                      <form action={deleteThingVariable}>
-                                        <input type="hidden" name="thingId" value={selectedThing.thing_id} />
-                                        <input type="hidden" name="variableId" value={variable.id} />
-                                        <button className="button buttonDanger" type="submit">
-                                          Delete Variable
-                                        </button>
-                                      </form>
-                                    </article>
+                                    <div className="thingCloudTableRow" key={variable.id}>
+                                      <strong>{variable.name}</strong>
+                                      <span>false</span>
+                                      <span>{formatDeviceDate(variable.updatedAt || selectedThing.updated_at)}</span>
+                                      <div className="thingCloudRowActions">
+                                        <form action={updateThingVariable} className="thingCloudInlineForm">
+                                          <input type="hidden" name="thingId" value={selectedThing.thing_id} />
+                                          <input type="hidden" name="variableId" value={variable.id} />
+                                          <input className="input" name="variableName" defaultValue={variable.name} required />
+                                          <button className="button buttonGhost" type="submit">
+                                            Save
+                                          </button>
+                                        </form>
+                                        <form action={deleteThingVariable}>
+                                          <input type="hidden" name="thingId" value={selectedThing.thing_id} />
+                                          <input type="hidden" name="variableId" value={variable.id} />
+                                          <button className="button buttonDanger" type="submit">
+                                            Delete
+                                          </button>
+                                        </form>
+                                      </div>
+                                    </div>
                                   ))}
                                 </div>
                               ) : (
                                 <div className="historyCard">
-                                  <strong>No variables yet</strong>
-                                  <p className="sectionCopy">Add your first variable for this Thing.</p>
+                                  <strong>No switch variables yet</strong>
+                                  <p className="sectionCopy">Use `+ Variable` to add your first switch.</p>
                                 </div>
                               )}
-                            </div>
-                          </article>
+                            </section>
+                          ) : (
+                            <section className="thingCloudPanel">
+                              <div className="thingCloudPanelHead">
+                                <div>
+                                  <strong>Sketch</strong>
+                                  <p className="sectionCopy">
+                                    The Thing is linked to <code>{selectedThing.device_sketch || "uno_r4_wifi_cloud_device"}</code>.
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="historyCard">
+                                <strong>Sketch tools coming next</strong>
+                                <p className="sectionCopy">
+                                  For now this Thing supports switch variables only. Later we can add generated sketch
+                                  helpers and code blocks here.
+                                </p>
+                              </div>
+                            </section>
+                          )}
                         </div>
                       ) : (
                         <>
