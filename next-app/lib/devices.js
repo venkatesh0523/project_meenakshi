@@ -102,6 +102,12 @@ async function ensureDevicesSchema() {
       ALTER TABLE thing_variables
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
+      ALTER TABLE thing_variables
+      ADD COLUMN IF NOT EXISTS current_value BOOLEAN NOT NULL DEFAULT false;
+
+      ALTER TABLE thing_variables
+      ADD COLUMN IF NOT EXISTS current_value_updated_at TIMESTAMPTZ;
+
       ALTER TABLE dashboards
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
@@ -233,6 +239,8 @@ async function listThings(userId) {
               'declaration', thing_variables.declaration,
               'updatePolicy', thing_variables.update_policy,
               'syncEnabled', thing_variables.sync_enabled,
+              'currentValue', thing_variables.current_value,
+              'currentValueUpdatedAt', thing_variables.current_value_updated_at,
               'createdAt', thing_variables.created_at,
               'updatedAt', thing_variables.updated_at
             )
@@ -289,6 +297,8 @@ async function getThingForUser(thingId, userId) {
               'declaration', thing_variables.declaration,
               'updatePolicy', thing_variables.update_policy,
               'syncEnabled', thing_variables.sync_enabled,
+              'currentValue', thing_variables.current_value,
+              'currentValueUpdatedAt', thing_variables.current_value_updated_at,
               'createdAt', thing_variables.created_at,
               'updatedAt', thing_variables.updated_at
             )
@@ -372,7 +382,11 @@ async function getDashboardForUser(dashboardId, userId) {
         dashboard_tiles.created_at,
         dashboard_tiles.updated_at,
         things.thing_name,
-        thing_variables.variable_name
+        thing_variables.variable_name,
+        thing_variables.variable_type,
+        thing_variables.permission,
+        thing_variables.current_value,
+        thing_variables.current_value_updated_at
       FROM dashboard_tiles
       LEFT JOIN things
         ON things.id = dashboard_tiles.linked_thing_id
@@ -861,6 +875,101 @@ async function updateThingVariableForUser({
   }
 }
 
+async function setThingVariableValueForUser({
+  variableId,
+  thingId,
+  userId,
+  value
+}) {
+  await ensureDevicesSchema();
+  const result = await db.query(
+    `
+      UPDATE thing_variables
+      SET
+        current_value = $4,
+        current_value_updated_at = NOW(),
+        updated_at = NOW()
+      FROM things
+      WHERE thing_variables.id = $1
+        AND thing_variables.thing_id = $2
+        AND things.id = thing_variables.thing_id
+        AND things.owner_user_id = $3
+      RETURNING
+        thing_variables.id,
+        thing_variables.current_value,
+        thing_variables.current_value_updated_at
+    `,
+    [variableId, thingId, userId, value]
+  );
+
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  await db.query(
+    `
+      UPDATE things
+      SET updated_at = NOW()
+      WHERE id = $1
+        AND owner_user_id = $2
+    `,
+    [thingId, userId]
+  );
+
+  return result.rows[0];
+}
+
+async function setDashboardTileVariableValueForUser({
+  dashboardId,
+  tileId,
+  userId,
+  value
+}) {
+  await ensureDevicesSchema();
+  const result = await db.query(
+    `
+      UPDATE thing_variables
+      SET
+        current_value = $4,
+        current_value_updated_at = NOW(),
+        updated_at = NOW()
+      FROM dashboard_tiles
+      JOIN dashboards
+        ON dashboards.id = dashboard_tiles.dashboard_id
+      JOIN things
+        ON things.id = dashboard_tiles.linked_thing_id
+      WHERE dashboard_tiles.id = $1
+        AND dashboard_tiles.dashboard_id = $2
+        AND dashboards.id = dashboard_tiles.dashboard_id
+        AND dashboards.owner_user_id = $3
+        AND thing_variables.id = dashboard_tiles.linked_variable_id
+        AND thing_variables.thing_id = things.id
+        AND things.owner_user_id = dashboards.owner_user_id
+      RETURNING
+        thing_variables.id,
+        thing_variables.current_value,
+        thing_variables.current_value_updated_at
+    `,
+    [tileId, dashboardId, userId, value]
+  );
+
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  await db.query(
+    `
+      UPDATE dashboards
+      SET updated_at = NOW()
+      WHERE id = $1
+        AND owner_user_id = $2
+    `,
+    [dashboardId, userId]
+  );
+
+  return result.rows[0];
+}
+
 async function deleteThingVariableForUser({ variableId, thingId, userId }) {
   await ensureDevicesSchema();
   const result = await db.query(
@@ -1103,7 +1212,9 @@ module.exports = {
   renameThingForUser,
   saveCommand,
   saveDeviceWifiConfiguration,
+  setDashboardTileVariableValueForUser,
   setDeviceLedState,
+  setThingVariableValueForUser,
   updateThingVariableForUser,
   updateDeviceHeartbeat
 };

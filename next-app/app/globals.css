@@ -1177,6 +1177,11 @@ a {
   font-size: 0.88rem;
 }
 
+.dashboardCanvasTileMetaView {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
 .dashboardSwitchPreview {
   width: 160px;
   display: flex;
@@ -1190,11 +1195,68 @@ a {
   font-size: 1.2rem;
 }
 
+.dashboardSwitchPreviewOn {
+  background: #118c8d;
+}
+
+.dashboardSwitchPreview:not(.dashboardSwitchPreviewOn) {
+  background: #7d8a88;
+}
+
 .dashboardSwitchKnob {
   width: 44px;
   height: 44px;
   border-radius: 50%;
   background: white;
+}
+
+.dashboardSwitchForm {
+  width: 100%;
+}
+
+.dashboardSwitchButton {
+  width: 100%;
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px 16px 24px;
+  border: 0;
+  border-radius: 999px;
+  background: #7d8a88;
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  transition: transform 140ms ease, background 140ms ease, box-shadow 140ms ease;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.dashboardSwitchButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.dashboardSwitchButton:disabled {
+  cursor: wait;
+  opacity: 0.78;
+}
+
+.dashboardSwitchButtonOn {
+  background: #118c8d;
+}
+
+.dashboardSwitchButtonLabel {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.dashboardSwitchButtonKnob {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 8px 18px rgba(31, 42, 31, 0.16);
 }
 
 .dashboardStatusPreview {
@@ -1256,6 +1318,11 @@ a {
   border-radius: 50%;
   background: #ff6a6a;
   box-shadow: 0 0 0 8px rgba(255, 106, 106, 0.14);
+}
+
+.dashboardLedBulbOn {
+  background: #19ab2a;
+  box-shadow: 0 0 0 8px rgba(25, 171, 42, 0.16);
 }
 
 .dashboardEmptyBoard {

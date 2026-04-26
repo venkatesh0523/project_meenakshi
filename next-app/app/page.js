@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { randomBytes, randomUUID } from "crypto";
 import DashboardAutoRefresh from "./DashboardAutoRefresh";
+import DashboardSwitchTileButton from "./DashboardSwitchTileButton";
 import DashboardWidgetModal from "./DashboardWidgetModal";
 import DeviceSetupModal from "./DeviceSetupModal";
 import LedToggleButton from "./LedToggleButton";
@@ -25,8 +26,10 @@ import {
   provisionDeviceForUser,
   renameThingForUser,
   saveDeviceWifiConfiguration,
+  setDashboardTileVariableValueForUser,
   setDeviceLedState
   ,
+  setThingVariableValueForUser,
   updateThingVariableForUser
 } from "../lib/devices";
 import { updateProvisionedArduinoSketch } from "../lib/arduino-sketch";
@@ -84,6 +87,10 @@ function formatDeviceDate(value) {
   }
 
   return new Date(value).toLocaleString();
+}
+
+function formatVariableValue(value) {
+  return value ? "true" : "false";
 }
 
 function getDeviceConnectionState(device) {
@@ -711,6 +718,33 @@ async function updateThingVariable(formData) {
   redirect(buildRedirect("/", { builder: "things", thingId, authMessage: `Variable ${variableName} updated.` }));
 }
 
+async function toggleThingVariable(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const thingId = normalizeField(formData.get("thingId"));
+  const variableId = normalizeField(formData.get("variableId"));
+  const nextValue = normalizeField(formData.get("nextValue"));
+
+  if (!thingId || !variableId || (nextValue !== "true" && nextValue !== "false")) {
+    redirect(buildRedirect("/", { builder: "things", thingId, authError: "Unable to update the switch." }));
+  }
+
+  const updated = await setThingVariableValueForUser({
+    thingId: Number(thingId),
+    variableId: Number(variableId),
+    userId: user.id,
+    value: nextValue === "true"
+  });
+
+  if (!updated) {
+    redirect(buildRedirect("/", { builder: "things", thingId, authError: "Switch not found." }));
+  }
+
+  revalidatePath("/");
+  redirect(buildRedirect("/", { builder: "things", thingId, authMessage: "Switch updated." }));
+}
+
 async function deleteThingVariable(formData) {
   "use server";
 
@@ -877,6 +911,54 @@ async function addDashboardTile(formData) {
 
   revalidatePath("/");
   redirect(buildRedirect("/", { builder: "dashboards", dashboardId, authMessage: `Tile ${tileName} added.` }));
+}
+
+async function toggleDashboardTileVariable(formData) {
+  "use server";
+
+  const user = await requireUser();
+  const dashboardId = normalizeField(formData.get("dashboardId"));
+  const tileId = normalizeField(formData.get("tileId"));
+  const nextValue = normalizeField(formData.get("nextValue"));
+
+  if (!dashboardId || !tileId || (nextValue !== "true" && nextValue !== "false")) {
+    redirect(
+      buildRedirect("/", {
+        builder: "dashboards",
+        dashboardId,
+        mode: "view",
+        authError: "Unable to update the dashboard switch."
+      })
+    );
+  }
+
+  const updated = await setDashboardTileVariableValueForUser({
+    dashboardId: Number(dashboardId),
+    tileId: Number(tileId),
+    userId: user.id,
+    value: nextValue === "true"
+  });
+
+  if (!updated) {
+    redirect(
+      buildRedirect("/", {
+        builder: "dashboards",
+        dashboardId,
+        mode: "view",
+        authError: "Linked switch not found."
+      })
+    );
+  }
+
+  revalidatePath("/");
+  redirect(
+    buildRedirect("/", {
+      builder: "dashboards",
+      dashboardId,
+      mode: "view",
+      authMessage: "Dashboard switch updated."
+    })
+  );
 }
 
 export default async function HomePage({ searchParams }) {
@@ -1104,9 +1186,17 @@ export default async function HomePage({ searchParams }) {
                                   {selectedThing.variables.map((variable) => (
                                     <div className="thingCloudTableRow" key={variable.id}>
                                       <strong>{variable.name}</strong>
-                                      <span>false</span>
-                                      <span>{formatDeviceDate(variable.updatedAt || selectedThing.updated_at)}</span>
+                                      <span>{formatVariableValue(Boolean(variable.currentValue))}</span>
+                                      <span>{formatDeviceDate(variable.currentValueUpdatedAt || variable.updatedAt || selectedThing.updated_at)}</span>
                                       <div className="thingCloudRowActions">
+                                        <form action={toggleThingVariable}>
+                                          <input type="hidden" name="thingId" value={selectedThing.thing_id} />
+                                          <input type="hidden" name="variableId" value={variable.id} />
+                                          <input type="hidden" name="nextValue" value={variable.currentValue ? "false" : "true"} />
+                                          <button className="button buttonGhost" type="submit">
+                                            {variable.currentValue ? "Turn Off" : "Turn On"}
+                                          </button>
+                                        </form>
                                         <form action={updateThingVariable} className="thingCloudInlineForm">
                                           <input type="hidden" name="thingId" value={selectedThing.thing_id} />
                                           <input type="hidden" name="variableId" value={variable.id} />
@@ -1517,14 +1607,23 @@ export default async function HomePage({ searchParams }) {
 
                                   <div className="dashboardCanvasTileBody">
                                     {tile.tile_type === "switch" ? (
-                                      <div className="dashboardSwitchPreview">
-                                        <span>ON</span>
-                                        <span className="dashboardSwitchKnob" />
-                                      </div>
+                                      dashboardMode === "view" ? (
+                                        <form action={toggleDashboardTileVariable} className="dashboardSwitchForm">
+                                          <input type="hidden" name="dashboardId" value={selectedDashboard.id} />
+                                          <input type="hidden" name="tileId" value={tile.id} />
+                                          <input type="hidden" name="nextValue" value={tile.current_value ? "false" : "true"} />
+                                          <DashboardSwitchTileButton isOn={Boolean(tile.current_value)} />
+                                        </form>
+                                      ) : (
+                                        <div className={`dashboardSwitchPreview ${tile.current_value ? "dashboardSwitchPreviewOn" : ""}`}>
+                                          <span>{tile.current_value ? "ON" : "OFF"}</span>
+                                          <span className="dashboardSwitchKnob" />
+                                        </div>
+                                      )
                                     ) : null}
 
                                     {tile.tile_type === "status" ? (
-                                      <div className="dashboardStatusPreview">ON</div>
+                                      <div className="dashboardStatusPreview">{tile.current_value ? "ON" : "OFF"}</div>
                                     ) : null}
 
                                     {tile.tile_type === "button" ? (
@@ -1535,15 +1634,15 @@ export default async function HomePage({ searchParams }) {
 
                                     {tile.tile_type === "value_display" ? (
                                       <div className="dashboardValuePreview">
-                                        <strong>24.5</strong>
+                                        <strong>{formatVariableValue(Boolean(tile.current_value))}</strong>
                                         <span>{tile.variable_name || "Value"}</span>
                                       </div>
                                     ) : null}
 
                                     {tile.tile_type === "led" ? (
                                       <div className="dashboardLedPreview">
-                                        <span className="dashboardLedBulb" />
-                                        <strong>LED ON</strong>
+                                        <span className={`dashboardLedBulb ${tile.current_value ? "dashboardLedBulbOn" : ""}`} />
+                                        <strong>{tile.current_value ? "LED ON" : "LED OFF"}</strong>
                                       </div>
                                     ) : null}
 
@@ -1566,7 +1665,12 @@ export default async function HomePage({ searchParams }) {
                                       <span>{tile.thing_name || "No thing linked"}</span>
                                       <strong>{tile.variable_name || "-"}</strong>
                                     </div>
-                                  ) : null}
+                                  ) : (
+                                    <div className="dashboardCanvasTileMeta dashboardCanvasTileMetaView">
+                                      <span>{tile.variable_name || "Linked switch"}</span>
+                                      <strong>{formatDeviceDate(tile.current_value_updated_at || tile.updated_at)}</strong>
+                                    </div>
+                                  )}
                                 </article>
                               ))
                             ) : (
