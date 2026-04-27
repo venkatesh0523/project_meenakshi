@@ -1736,12 +1736,13 @@ export default async function HomePage({ searchParams }) {
                                   <div className="dashboardCanvasTileBody">
                                     {tile.tile_type === "switch" ? (
                                       dashboardMode === "view" ? (
-                                        <form action={toggleDashboardTileVariable} className="dashboardSwitchForm">
-                                          <input type="hidden" name="dashboardId" value={selectedDashboard.id} />
-                                          <input type="hidden" name="tileId" value={tile.id} />
-                                          <input type="hidden" name="nextValue" value={tile.current_value ? "false" : "true"} />
-                                          <DashboardSwitchTileButton isOn={Boolean(tile.current_value)} />
-                                        </form>
+                                        <div className="dashboardSwitchForm">
+                                          <DashboardSwitchTileButton
+                                            isOn={Boolean(tile.current_value)}
+                                            dashboardId={selectedDashboard.id}
+                                            tileId={tile.id}
+                                          />
+                                        </div>
                                       ) : (
                                         <div className={`dashboardSwitchPreview ${tile.current_value ? "dashboardSwitchPreviewOn" : ""}`}>
                                           <span>{tile.current_value ? "ON" : "OFF"}</span>

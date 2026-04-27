@@ -16,6 +16,7 @@ const char* DEVICE_SECRET = "im1rAljuqaF_O77xMfHOiz4E";
 const int LED_PIN = 13;
 const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
 const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
+const unsigned long COMMAND_POLL_INTERVAL_MS = 1000;
 
 WiFiClient mqttWifiClient;
 PubSubClient mqttClient(mqttWifiClient);
@@ -23,9 +24,11 @@ unsigned long lastHeartbeatAt = 0;
 unsigned long lastWifiRetryAt = 0;
 unsigned long lastReadyAnnouncementAt = 0;
 unsigned long lastMqttRetryAt = 0;
+unsigned long lastCommandPollAt = 0;
 String serialBuffer;
 String activeWifiSsid;
 String activeWifiPassword;
+String currentLedState = "OFF";
 
 String commandTopic = String("farm1/") + DEVICE_ID + "/cmd";
 String statusTopic = String("farm1/") + DEVICE_ID + "/status";
@@ -41,6 +44,7 @@ void announceBoardReady() {
 
 bool connectWifi();
 void connectMqtt();
+void applyLedCommand(const String& command, bool publishAck = true);
 
 String readHttpResponse(Client& client) {
   String response;
@@ -248,6 +252,29 @@ void publishStatus(const char* status) {
   Serial.println(published ? "ok" : "failed");
 }
 
+void applyLedCommand(const String& command, bool publishAck) {
+  if (command == currentLedState) {
+    if (publishAck) {
+      publishStatus(command.c_str());
+    }
+    return;
+  }
+
+  if (command == "ON") {
+    digitalWrite(LED_PIN, HIGH);
+    currentLedState = "ON";
+    if (publishAck) {
+      publishStatus("ON");
+    }
+  } else if (command == "OFF") {
+    digitalWrite(LED_PIN, LOW);
+    currentLedState = "OFF";
+    if (publishAck) {
+      publishStatus("OFF");
+    }
+  }
+}
+
 void onMessage(char* topic, byte* payload, unsigned int length) {
   String message;
 
@@ -255,17 +282,47 @@ void onMessage(char* topic, byte* payload, unsigned int length) {
     message += static_cast<char>(payload[index]);
   }
 
+  message.trim();
+
   Serial.print("Received on topic ");
   Serial.print(topic);
   Serial.print(": ");
   Serial.println(message);
+  applyLedCommand(message);
+}
 
-  if (message == "ON") {
-    digitalWrite(LED_PIN, HIGH);
-    publishStatus("ON");
-  } else if (message == "OFF") {
-    digitalWrite(LED_PIN, LOW);
-    publishStatus("OFF");
+void syncLedCommandFromCloud() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  if (millis() - lastCommandPollAt < COMMAND_POLL_INTERVAL_MS) {
+    return;
+  }
+  lastCommandPollAt = millis();
+
+  WiFiClient plainClient;
+  WiFiSSLClient sslClient;
+  Client& client = CLOUD_USE_SSL ? static_cast<Client&>(sslClient) : static_cast<Client&>(plainClient);
+
+  if (!client.connect(CLOUD_HOST, CLOUD_PORT)) {
+    Serial.println("Command poll failed: could not connect to cloud");
+    return;
+  }
+
+  const String path =
+      String("/api/devices/") + DEVICE_ID + "/command?deviceSecret=" + DEVICE_SECRET;
+
+  client.print(String("GET ") + path + " HTTP/1.1\r\n");
+  client.print(String("Host: ") + CLOUD_HOST + ":" + String(CLOUD_PORT) + "\r\n");
+  client.print("Connection: close\r\n\r\n");
+
+  const String response = readHttpResponse(client);
+  client.stop();
+
+  const String command = readJsonString(response, "command");
+  if (command == "ON" || command == "OFF") {
+    applyLedCommand(command, false);
   }
 }
 
@@ -374,6 +431,8 @@ void loop() {
   if (mqttClient.connected()) {
     mqttClient.loop();
   }
+
+  syncLedCommandFromCloud();
 
   if (WiFi.status() == WL_CONNECTED && millis() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
     sendHeartbeat("online");
