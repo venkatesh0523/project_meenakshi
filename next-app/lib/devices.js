@@ -398,6 +398,7 @@ async function getDashboardForUser(dashboardId, userId) {
         dashboard_tiles.sort_order,
         dashboard_tiles.created_at,
         dashboard_tiles.updated_at,
+        things.device_id,
         things.thing_name,
         thing_variables.variable_name,
         thing_variables.variable_type,

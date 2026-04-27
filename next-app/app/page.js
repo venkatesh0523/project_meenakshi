@@ -732,6 +732,23 @@ async function toggleThingVariable(formData) {
     redirect(buildRedirect("/", { builder: "things", thingId, authError: "Unable to update the switch." }));
   }
 
+  const thing = await getThingForUser(Number(thingId), user.id);
+  if (!thing) {
+    redirect(buildRedirect("/", { builder: "things", thingId, authError: "Thing not found." }));
+  }
+
+  if (thing.device_id) {
+    const nextCommand = nextValue === "true" ? "ON" : "OFF";
+    const published = await publishLedCommandWithCppApi({
+      deviceId: thing.device_id,
+      command: nextCommand
+    });
+
+    if (!published.ok) {
+      redirect(buildRedirect("/", { builder: "things", thingId, authError: published.message }));
+    }
+  }
+
   const updated = await setThingVariableValueForUser({
     thingId: Number(thingId),
     variableId: Number(variableId),
@@ -980,6 +997,39 @@ async function toggleDashboardTileVariable(formData) {
         authError: "Unable to update the dashboard switch."
       })
     );
+  }
+
+  const dashboard = await getDashboardForUser(Number(dashboardId), user.id);
+  const tile = dashboard?.tiles?.find((item) => String(item.id) === tileId) || null;
+
+  if (!dashboard || !tile) {
+    redirect(
+      buildRedirect("/", {
+        builder: "dashboards",
+        dashboardId,
+        mode: "view",
+        authError: "Linked switch not found."
+      })
+    );
+  }
+
+  if (tile.device_id) {
+    const nextCommand = nextValue === "true" ? "ON" : "OFF";
+    const published = await publishLedCommandWithCppApi({
+      deviceId: tile.device_id,
+      command: nextCommand
+    });
+
+    if (!published.ok) {
+      redirect(
+        buildRedirect("/", {
+          builder: "dashboards",
+          dashboardId,
+          mode: "view",
+          authError: published.message
+        })
+      );
+    }
   }
 
   const updated = await setDashboardTileVariableValueForUser({
