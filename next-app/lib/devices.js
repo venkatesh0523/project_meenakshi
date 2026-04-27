@@ -930,6 +930,38 @@ async function setThingVariableValueForUser({
     return null;
   }
 
+  const linkedDeviceResult = await db.query(
+    `
+      SELECT devices.device_id
+      FROM things
+      JOIN devices
+        ON devices.device_id = things.device_id
+       AND devices.owner_user_id = things.owner_user_id
+      WHERE things.id = $1
+        AND things.owner_user_id = $2
+    `,
+    [thingId, userId]
+  );
+
+  const linkedDevice = linkedDeviceResult.rows[0];
+  if (linkedDevice?.device_id) {
+    await db.query(
+      `
+        UPDATE devices
+        SET led_state = $3
+        WHERE device_id = $1
+          AND owner_user_id = $2
+      `,
+      [linkedDevice.device_id, userId, value ? "ON" : "OFF"]
+    );
+
+    await saveCommand({
+      deviceId: linkedDevice.device_id,
+      command: value ? "ON" : "OFF",
+      source: "thing-switch"
+    });
+  }
+
   await db.query(
     `
       UPDATE things
@@ -979,6 +1011,43 @@ async function setDashboardTileVariableValueForUser({
 
   if (!result.rows[0]) {
     return null;
+  }
+
+  const linkedDeviceResult = await db.query(
+    `
+      SELECT devices.device_id
+      FROM dashboard_tiles
+      JOIN dashboards
+        ON dashboards.id = dashboard_tiles.dashboard_id
+      JOIN things
+        ON things.id = dashboard_tiles.linked_thing_id
+      JOIN devices
+        ON devices.device_id = things.device_id
+       AND devices.owner_user_id = things.owner_user_id
+      WHERE dashboard_tiles.id = $1
+        AND dashboard_tiles.dashboard_id = $2
+        AND dashboards.owner_user_id = $3
+    `,
+    [tileId, dashboardId, userId]
+  );
+
+  const linkedDevice = linkedDeviceResult.rows[0];
+  if (linkedDevice?.device_id) {
+    await db.query(
+      `
+        UPDATE devices
+        SET led_state = $3
+        WHERE device_id = $1
+          AND owner_user_id = $2
+      `,
+      [linkedDevice.device_id, userId, value ? "ON" : "OFF"]
+    );
+
+    await saveCommand({
+      deviceId: linkedDevice.device_id,
+      command: value ? "ON" : "OFF",
+      source: "dashboard-switch"
+    });
   }
 
   await db.query(
