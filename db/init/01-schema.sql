@@ -72,8 +72,11 @@ CREATE TABLE IF NOT EXISTS thing_variables (
   variable_type VARCHAR(40) NOT NULL DEFAULT 'boolean',
   permission VARCHAR(40) NOT NULL DEFAULT 'read_write',
   declaration VARCHAR(150) NOT NULL,
+  pin_number INTEGER NOT NULL DEFAULT 13,
   update_policy VARCHAR(40) NOT NULL DEFAULT 'on_change',
   sync_enabled BOOLEAN NOT NULL DEFAULT false,
+  current_value BOOLEAN NOT NULL DEFAULT false,
+  current_value_updated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (thing_id, variable_name)
@@ -92,6 +95,7 @@ CREATE TABLE IF NOT EXISTS dashboard_tiles (
   dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
   tile_name VARCHAR(150) NOT NULL,
   tile_type VARCHAR(40) NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   linked_thing_id INTEGER REFERENCES things(id) ON DELETE SET NULL,
   linked_variable_id INTEGER REFERENCES thing_variables(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -150,6 +154,15 @@ ALTER TABLE thing_variables
 ADD COLUMN IF NOT EXISTS sync_enabled BOOLEAN NOT NULL DEFAULT false;
 
 ALTER TABLE thing_variables
+ADD COLUMN IF NOT EXISTS pin_number INTEGER NOT NULL DEFAULT 13;
+
+ALTER TABLE thing_variables
+ADD COLUMN IF NOT EXISTS current_value BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE thing_variables
+ADD COLUMN IF NOT EXISTS current_value_updated_at TIMESTAMPTZ;
+
+ALTER TABLE thing_variables
 ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 ALTER TABLE dashboards
@@ -162,7 +175,25 @@ ALTER TABLE dashboard_tiles
 ADD COLUMN IF NOT EXISTS linked_variable_id INTEGER REFERENCES thing_variables(id) ON DELETE SET NULL;
 
 ALTER TABLE dashboard_tiles
+ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE dashboard_tiles
 ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+WITH ordered_variables AS (
+  SELECT
+    id,
+    GREATEST(2, 13 - (ROW_NUMBER() OVER (
+      PARTITION BY thing_id
+      ORDER BY created_at ASC, id ASC
+    ) - 1)) AS desired_pin
+  FROM thing_variables
+)
+UPDATE thing_variables
+SET pin_number = ordered_variables.desired_pin
+FROM ordered_variables
+WHERE thing_variables.id = ordered_variables.id
+  AND (thing_variables.pin_number IS NULL OR thing_variables.pin_number = 13);
 
 ALTER TABLE pending_user_registrations
 ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;

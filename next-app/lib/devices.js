@@ -52,8 +52,11 @@ async function ensureDevicesSchema() {
         variable_type VARCHAR(40) NOT NULL DEFAULT 'boolean',
         permission VARCHAR(40) NOT NULL DEFAULT 'read_write',
         declaration VARCHAR(150) NOT NULL DEFAULT '',
+        pin_number INTEGER NOT NULL DEFAULT 13,
         update_policy VARCHAR(40) NOT NULL DEFAULT 'on_change',
         sync_enabled BOOLEAN NOT NULL DEFAULT false,
+        current_value BOOLEAN NOT NULL DEFAULT false,
+        current_value_updated_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE (thing_id, variable_name)
@@ -104,6 +107,9 @@ async function ensureDevicesSchema() {
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
       ALTER TABLE thing_variables
+      ADD COLUMN IF NOT EXISTS pin_number INTEGER NOT NULL DEFAULT 13;
+
+      ALTER TABLE thing_variables
       ADD COLUMN IF NOT EXISTS current_value BOOLEAN NOT NULL DEFAULT false;
 
       ALTER TABLE thing_variables
@@ -136,12 +142,28 @@ async function ensureDevicesSchema() {
       ALTER TABLE dashboard_tiles
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
+      WITH ordered_variables AS (
+        SELECT
+          id,
+          GREATEST(2, 13 - (ROW_NUMBER() OVER (
+            PARTITION BY thing_id
+            ORDER BY created_at ASC, id ASC
+          ) - 1)) AS desired_pin
+        FROM thing_variables
+      )
+      UPDATE thing_variables
+      SET pin_number = ordered_variables.desired_pin
+      FROM ordered_variables
+      WHERE thing_variables.id = ordered_variables.id
+        AND (thing_variables.pin_number IS NULL OR thing_variables.pin_number = 13);
+
       INSERT INTO thing_variables (
         thing_id,
         variable_name,
         variable_type,
         permission,
         declaration,
+        pin_number,
         update_policy,
         sync_enabled
       )
@@ -151,6 +173,7 @@ async function ensureDevicesSchema() {
         COALESCE(NULLIF(variable_item->>'type', ''), 'boolean'),
         COALESCE(NULLIF(variable_item->>'permission', ''), 'read_write'),
         COALESCE(NULLIF(variable_item->>'declaration', ''), COALESCE(NULLIF(variable_item->>'name', ''), 'variable_' || variable_position)),
+        GREATEST(2, 14 - variable_position),
         COALESCE(NULLIF(variable_item->>'updatePolicy', ''), 'on_change'),
         COALESCE((variable_item->>'syncEnabled')::boolean, false)
       FROM things
@@ -253,6 +276,7 @@ async function listThings(userId) {
               'type', thing_variables.variable_type,
               'permission', thing_variables.permission,
               'declaration', thing_variables.declaration,
+              'pinNumber', thing_variables.pin_number,
               'updatePolicy', thing_variables.update_policy,
               'syncEnabled', thing_variables.sync_enabled,
               'currentValue', thing_variables.current_value,
@@ -311,6 +335,7 @@ async function getThingForUser(thingId, userId) {
               'type', thing_variables.variable_type,
               'permission', thing_variables.permission,
               'declaration', thing_variables.declaration,
+              'pinNumber', thing_variables.pin_number,
               'updatePolicy', thing_variables.update_policy,
               'syncEnabled', thing_variables.sync_enabled,
               'currentValue', thing_variables.current_value,
@@ -403,6 +428,7 @@ async function getDashboardForUser(dashboardId, userId) {
         thing_variables.variable_name,
         thing_variables.variable_type,
         thing_variables.permission,
+        thing_variables.pin_number,
         thing_variables.current_value,
         thing_variables.current_value_updated_at
       FROM dashboard_tiles
@@ -813,6 +839,16 @@ async function addThingVariableForUser({
   }
 
   try {
+    const nextPinResult = await db.query(
+      `
+        SELECT GREATEST(2, 13 - COUNT(*)) AS next_pin
+        FROM thing_variables
+        WHERE thing_id = $1
+      `,
+      [currentThing.thing_id]
+    );
+    const nextPin = Number(nextPinResult.rows[0]?.next_pin || 13);
+
     const insertResult = await db.query(
       `
         INSERT INTO thing_variables (
@@ -820,12 +856,13 @@ async function addThingVariableForUser({
           variable_name,
           variable_type,
           permission,
-          declaration
+          declaration,
+          pin_number
         )
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, pin_number
       `,
-      [currentThing.thing_id, normalizedName, normalizedType, normalizedPermission, normalizedName]
+      [currentThing.thing_id, normalizedName, normalizedType, normalizedPermission, normalizedName, nextPin]
     );
 
     await db.query(
@@ -921,6 +958,7 @@ async function setThingVariableValueForUser({
         AND things.owner_user_id = $3
       RETURNING
         thing_variables.id,
+        thing_variables.pin_number,
         thing_variables.current_value,
         thing_variables.current_value_updated_at
     `,
@@ -945,7 +983,7 @@ async function setThingVariableValueForUser({
   );
 
   const linkedDevice = linkedDeviceResult.rows[0];
-  if (linkedDevice?.device_id) {
+  if (linkedDevice?.device_id && Number(result.rows[0]?.pin_number || 13) === 13) {
     await db.query(
       `
         UPDATE devices
@@ -1004,6 +1042,7 @@ async function setDashboardTileVariableValueForUser({
         AND things.owner_user_id = dashboards.owner_user_id
       RETURNING
         thing_variables.id,
+        thing_variables.pin_number,
         thing_variables.current_value,
         thing_variables.current_value_updated_at
     `,
@@ -1033,7 +1072,7 @@ async function setDashboardTileVariableValueForUser({
   );
 
   const linkedDevice = linkedDeviceResult.rows[0];
-  if (linkedDevice?.device_id) {
+  if (linkedDevice?.device_id && Number(result.rows[0]?.pin_number || 13) === 13) {
     await db.query(
       `
         UPDATE devices
@@ -1272,6 +1311,7 @@ async function duplicateThingForUser({ thingId, userId }) {
           variable_type,
           permission,
           declaration,
+          pin_number,
           update_policy,
           sync_enabled
         )
@@ -1281,6 +1321,7 @@ async function duplicateThingForUser({ thingId, userId }) {
           thing_variables.variable_type,
           thing_variables.permission,
           thing_variables.declaration,
+          thing_variables.pin_number,
           thing_variables.update_policy,
           thing_variables.sync_enabled
         FROM things
@@ -1333,13 +1374,47 @@ async function getDeviceCommandForHeartbeat({ deviceId, deviceSecret }) {
   await ensureDevicesSchema();
   const result = await db.query(
     `
-      UPDATE devices
-      SET
-        last_seen_at = NOW(),
-        last_status = 'online'
-      WHERE device_id = $1
-        AND device_secret = $2
-      RETURNING device_id, led_state, last_seen_at, last_status
+      WITH updated_device AS (
+        UPDATE devices
+        SET
+          last_seen_at = NOW(),
+          last_status = 'online'
+        WHERE device_id = $1
+          AND device_secret = $2
+        RETURNING device_id, led_state, last_seen_at, last_status, owner_user_id
+      )
+      SELECT
+        updated_device.device_id,
+        updated_device.led_state,
+        updated_device.last_seen_at,
+        updated_device.last_status,
+        CASE
+          WHEN COUNT(thing_variables.id) FILTER (WHERE thing_variables.pin_number = 13) > 0
+            THEN CASE
+              WHEN BOOL_OR(thing_variables.current_value) FILTER (WHERE thing_variables.pin_number = 13) THEN 'ON'
+              ELSE 'OFF'
+            END
+          ELSE COALESCE(updated_device.led_state, 'OFF')
+        END AS pin13_command,
+        CASE
+          WHEN COUNT(thing_variables.id) FILTER (WHERE thing_variables.pin_number = 12) > 0
+            THEN CASE
+              WHEN BOOL_OR(thing_variables.current_value) FILTER (WHERE thing_variables.pin_number = 12) THEN 'ON'
+              ELSE 'OFF'
+            END
+          ELSE 'OFF'
+        END AS pin12_command
+      FROM updated_device
+      LEFT JOIN things
+        ON things.device_id = updated_device.device_id
+       AND things.owner_user_id = updated_device.owner_user_id
+      LEFT JOIN thing_variables
+        ON thing_variables.thing_id = things.id
+      GROUP BY
+        updated_device.device_id,
+        updated_device.led_state,
+        updated_device.last_seen_at,
+        updated_device.last_status
     `,
     [deviceId, deviceSecret]
   );

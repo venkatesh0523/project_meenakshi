@@ -25,7 +25,9 @@ export async function GET(request, { params }) {
 
   return NextResponse.json({
     deviceId: device.device_id,
-    command: device.led_state || "OFF",
+    command: device.pin13_command || device.led_state || "OFF",
+    pin13Command: device.pin13_command || device.led_state || "OFF",
+    pin12Command: device.pin12_command || "OFF",
     lastSeenAt: device.last_seen_at,
     status: device.last_status
   });

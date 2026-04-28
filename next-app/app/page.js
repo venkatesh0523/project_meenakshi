@@ -737,7 +737,8 @@ async function toggleThingVariable(formData) {
     redirect(buildRedirect("/", { builder: "things", thingId, authError: "Thing not found." }));
   }
 
-  if (thing.device_id) {
+  const targetVariable = thing.variables?.find((item) => String(item.id) === variableId) || null;
+  if (thing.device_id && Number(targetVariable?.pinNumber || 13) === 13) {
     const nextCommand = nextValue === "true" ? "ON" : "OFF";
     const published = await publishLedCommandWithCppApi({
       deviceId: thing.device_id,
@@ -1013,7 +1014,7 @@ async function toggleDashboardTileVariable(formData) {
     );
   }
 
-  if (tile.device_id) {
+  if (tile.device_id && Number(tile.pin_number || 13) === 13) {
     const nextCommand = nextValue === "true" ? "ON" : "OFF";
     const published = await publishLedCommandWithCppApi({
       deviceId: tile.device_id,

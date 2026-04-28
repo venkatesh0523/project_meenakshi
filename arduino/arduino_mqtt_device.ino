@@ -14,6 +14,7 @@ const bool CLOUD_USE_SSL = false;
 const char* DEVICE_ID = "arduino-e4d35a2d-790a-44d8-92fa-19152bcfabc1";
 const char* DEVICE_SECRET = "im1rAljuqaF_O77xMfHOiz4E";
 const int LED_PIN = 13;
+const int SECONDARY_PIN = 12;
 const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
 const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
 const unsigned long COMMAND_POLL_INTERVAL_MS = 1000;
@@ -29,6 +30,7 @@ String serialBuffer;
 String activeWifiSsid;
 String activeWifiPassword;
 String currentLedState = "OFF";
+String currentSecondaryState = "OFF";
 
 String commandTopic = String("farm1/") + DEVICE_ID + "/cmd";
 String statusTopic = String("farm1/") + DEVICE_ID + "/status";
@@ -45,6 +47,7 @@ void announceBoardReady() {
 bool connectWifi();
 void connectMqtt();
 void applyLedCommand(const String& command, bool publishAck = true);
+void applySecondaryCommand(const String& command);
 
 String readHttpResponse(Client& client) {
   String response;
@@ -275,6 +278,23 @@ void applyLedCommand(const String& command, bool publishAck) {
   }
 }
 
+void applySecondaryCommand(const String& command) {
+  if (command == currentSecondaryState) {
+    return;
+  }
+
+  if (command == "ON") {
+    digitalWrite(SECONDARY_PIN, HIGH);
+    currentSecondaryState = "ON";
+    return;
+  }
+
+  if (command == "OFF") {
+    digitalWrite(SECONDARY_PIN, LOW);
+    currentSecondaryState = "OFF";
+  }
+}
+
 void onMessage(char* topic, byte* payload, unsigned int length) {
   String message;
 
@@ -320,9 +340,19 @@ void syncLedCommandFromCloud() {
   const String response = readHttpResponse(client);
   client.stop();
 
-  const String command = readJsonString(response, "command");
-  if (command == "ON" || command == "OFF") {
-    applyLedCommand(command, false);
+  const String pin13Command = readJsonString(response, "pin13Command");
+  if (pin13Command == "ON" || pin13Command == "OFF") {
+    applyLedCommand(pin13Command, false);
+  } else {
+    const String command = readJsonString(response, "command");
+    if (command == "ON" || command == "OFF") {
+      applyLedCommand(command, false);
+    }
+  }
+
+  const String pin12Command = readJsonString(response, "pin12Command");
+  if (pin12Command == "ON" || pin12Command == "OFF") {
+    applySecondaryCommand(pin12Command);
   }
 }
 
@@ -394,7 +424,9 @@ void connectMqtt() {
 
 void setup() {
   pinMode(LED_PIN, OUTPUT);
+  pinMode(SECONDARY_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
+  digitalWrite(SECONDARY_PIN, LOW);
 
   Serial.begin(115200);
   const unsigned long serialWaitStartedAt = millis();

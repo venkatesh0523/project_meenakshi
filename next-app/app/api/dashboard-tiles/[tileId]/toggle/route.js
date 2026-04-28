@@ -69,7 +69,7 @@ export async function POST(request, { params }) {
     return NextResponse.json({ message: "Linked switch not found." }, { status: 404 });
   }
 
-  if (tile.device_id) {
+  if (tile.device_id && Number(tile.pin_number || 13) === 13) {
     await publishLedCommandWithCppApi({
       deviceId: tile.device_id,
       command: nextValue ? "ON" : "OFF"
