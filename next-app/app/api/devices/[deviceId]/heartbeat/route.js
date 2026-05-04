@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { updateDeviceHeartbeat } from "../../../../../lib/devices";
+import { applyDeviceVariableUpdates, updateDeviceHeartbeat } from "../../../../../lib/devices";
 
 function normalizeField(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -21,6 +21,8 @@ export async function POST(request, { params }) {
 
   const deviceSecret = normalizeField(body.deviceSecret);
   const status = normalizeField(body.status || "online").toLowerCase();
+  const analogPins = body && typeof body.analogPins === "object" && !Array.isArray(body.analogPins) ? body.analogPins : {};
+  const variables = body && typeof body.variables === "object" && !Array.isArray(body.variables) ? body.variables : {};
 
   if (!deviceSecret) {
     return NextResponse.json({ message: "deviceSecret is required" }, { status: 400 });
@@ -36,11 +38,19 @@ export async function POST(request, { params }) {
     return NextResponse.json({ message: "Device authentication failed" }, { status: 401 });
   }
 
+  const variableUpdateResult = await applyDeviceVariableUpdates({
+    deviceId,
+    deviceSecret,
+    analogPins,
+    variables
+  });
+
   return NextResponse.json({
     message: heartbeat.secret_repaired ? "Heartbeat accepted and device secret updated" : "Heartbeat accepted",
     deviceId: heartbeat.device_id,
     lastSeenAt: heartbeat.last_seen_at,
     status: heartbeat.last_status,
-    secretRepaired: heartbeat.secret_repaired
+    secretRepaired: heartbeat.secret_repaired,
+    variableUpdatesApplied: variableUpdateResult.updatedCount
   });
 }

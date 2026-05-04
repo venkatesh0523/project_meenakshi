@@ -6,6 +6,94 @@ function generateDeviceSecret() {
   return randomBytes(18).toString("base64url");
 }
 
+function normalizeVariableType(value) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+
+  if (normalized === "bool") {
+    return "boolean";
+  }
+
+  if (normalized === "integer") {
+    return "int";
+  }
+
+  if (["boolean", "int", "string"].includes(normalized)) {
+    return normalized;
+  }
+
+  return "";
+}
+
+function normalizePinLabel(value) {
+  const normalized = typeof value === "string" ? value.trim().toUpperCase() : "";
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (/^A[0-9]+$/.test(normalized)) {
+    return normalized;
+  }
+
+  if (/^[0-9]+$/.test(normalized)) {
+    return normalized;
+  }
+
+  return "";
+}
+
+function parseTypedVariableValue(variableType, value) {
+  const normalizedType = normalizeVariableType(variableType) || "boolean";
+
+  if (normalizedType === "boolean") {
+    if (typeof value === "boolean") {
+      return { ok: true, booleanValue: value, textValue: value ? "true" : "false" };
+    }
+
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "true" || normalized === "1" || normalized === "on") {
+        return { ok: true, booleanValue: true, textValue: "true" };
+      }
+
+      if (normalized === "false" || normalized === "0" || normalized === "off") {
+        return { ok: true, booleanValue: false, textValue: "false" };
+      }
+    }
+
+    if (typeof value === "number") {
+      return { ok: true, booleanValue: value !== 0, textValue: value !== 0 ? "true" : "false" };
+    }
+
+    return { ok: false };
+  }
+
+  if (normalizedType === "int") {
+    const numericValue =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && value.trim() !== ""
+          ? Number(value)
+          : Number.NaN;
+
+    if (!Number.isFinite(numericValue)) {
+      return { ok: false };
+    }
+
+    return { ok: true, booleanValue: numericValue !== 0, textValue: String(Math.round(numericValue)) };
+  }
+
+  if (typeof value === "string") {
+    return { ok: true, booleanValue: value.trim().length > 0, textValue: value };
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return { ok: true, booleanValue: Boolean(value), textValue: String(value) };
+  }
+
+  return { ok: false };
+}
+
 async function ensureDevicesSchema() {
   if (!devicesSchemaReadyPromise) {
     devicesSchemaReadyPromise = db.query(`
@@ -53,9 +141,11 @@ async function ensureDevicesSchema() {
         permission VARCHAR(40) NOT NULL DEFAULT 'read_write',
         declaration VARCHAR(150) NOT NULL DEFAULT '',
         pin_number INTEGER NOT NULL DEFAULT 13,
+        pin_label VARCHAR(20) NOT NULL DEFAULT '13',
         update_policy VARCHAR(40) NOT NULL DEFAULT 'on_change',
         sync_enabled BOOLEAN NOT NULL DEFAULT false,
         current_value BOOLEAN NOT NULL DEFAULT false,
+        current_value_text TEXT NOT NULL DEFAULT 'false',
         current_value_updated_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -110,7 +200,13 @@ async function ensureDevicesSchema() {
       ADD COLUMN IF NOT EXISTS pin_number INTEGER NOT NULL DEFAULT 13;
 
       ALTER TABLE thing_variables
+      ADD COLUMN IF NOT EXISTS pin_label VARCHAR(20) NOT NULL DEFAULT '13';
+
+      ALTER TABLE thing_variables
       ADD COLUMN IF NOT EXISTS current_value BOOLEAN NOT NULL DEFAULT false;
+
+      ALTER TABLE thing_variables
+      ADD COLUMN IF NOT EXISTS current_value_text TEXT NOT NULL DEFAULT 'false';
 
       ALTER TABLE thing_variables
       ADD COLUMN IF NOT EXISTS current_value_updated_at TIMESTAMPTZ;
@@ -277,9 +373,11 @@ async function listThings(userId) {
               'permission', thing_variables.permission,
               'declaration', thing_variables.declaration,
               'pinNumber', thing_variables.pin_number,
+              'pinLabel', thing_variables.pin_label,
               'updatePolicy', thing_variables.update_policy,
               'syncEnabled', thing_variables.sync_enabled,
               'currentValue', thing_variables.current_value,
+              'currentValueText', thing_variables.current_value_text,
               'currentValueUpdatedAt', thing_variables.current_value_updated_at,
               'createdAt', thing_variables.created_at,
               'updatedAt', thing_variables.updated_at
@@ -336,9 +434,11 @@ async function getThingForUser(thingId, userId) {
               'permission', thing_variables.permission,
               'declaration', thing_variables.declaration,
               'pinNumber', thing_variables.pin_number,
+              'pinLabel', thing_variables.pin_label,
               'updatePolicy', thing_variables.update_policy,
               'syncEnabled', thing_variables.sync_enabled,
               'currentValue', thing_variables.current_value,
+              'currentValueText', thing_variables.current_value_text,
               'currentValueUpdatedAt', thing_variables.current_value_updated_at,
               'createdAt', thing_variables.created_at,
               'updatedAt', thing_variables.updated_at
@@ -429,7 +529,9 @@ async function getDashboardForUser(dashboardId, userId) {
         thing_variables.variable_type,
         thing_variables.permission,
         thing_variables.pin_number,
+        thing_variables.pin_label,
         thing_variables.current_value,
+        thing_variables.current_value_text,
         thing_variables.current_value_updated_at
       FROM dashboard_tiles
       LEFT JOIN things
@@ -816,18 +918,17 @@ async function addThingVariableForUser({
   userId,
   variableName,
   variableType,
-  permission
+  permission,
+  pinLabel
 }) {
   await ensureDevicesSchema();
   const normalizedName = variableName.trim();
-  const rawType = variableType.trim().toLowerCase();
-  const normalizedType =
-    rawType === "bool"
-      ? "boolean"
-      : rawType === "integer"
-        ? "int"
-        : rawType;
+  const normalizedType = normalizeVariableType(variableType);
   const normalizedPermission = permission.trim().toLowerCase();
+  const normalizedPinLabel =
+    normalizePinLabel(pinLabel) || (normalizedType === "int" ? "A5" : "13");
+  const parsedPinNumber = Number.parseInt(normalizedPinLabel, 10);
+  const normalizedPinNumber = Number.isFinite(parsedPinNumber) ? parsedPinNumber : 13;
 
   if (!["boolean", "int", "string"].includes(normalizedType)) {
     return { ok: false, reason: "invalid-variable-type" };
@@ -867,12 +968,23 @@ async function addThingVariableForUser({
           variable_type,
           permission,
           declaration,
-          pin_number
+          pin_number,
+          pin_label,
+          current_value_text
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id, pin_number
       `,
-      [currentThing.thing_id, normalizedName, normalizedType, normalizedPermission, normalizedName, nextPin]
+      [
+        currentThing.thing_id,
+        normalizedName,
+        normalizedType,
+        normalizedPermission,
+        normalizedName,
+        normalizedType === "boolean" ? nextPin : normalizedPinNumber,
+        normalizedPinLabel,
+        normalizedType === "boolean" ? "false" : ""
+      ]
     );
 
     await db.query(
@@ -900,17 +1012,16 @@ async function updateThingVariableForUser({
   userId,
   variableName,
   variableType,
-  permission
+  permission,
+  pinLabel
 }) {
   await ensureDevicesSchema();
-  const rawType = variableType.trim().toLowerCase();
-  const normalizedType =
-    rawType === "bool"
-      ? "boolean"
-      : rawType === "integer"
-        ? "int"
-        : rawType;
+  const normalizedType = normalizeVariableType(variableType);
   const normalizedPermission = permission.trim().toLowerCase();
+  const normalizedPinLabel =
+    normalizePinLabel(pinLabel) || (normalizedType === "int" ? "A5" : "13");
+  const parsedPinNumber = Number.parseInt(normalizedPinLabel, 10);
+  const normalizedPinNumber = Number.isFinite(parsedPinNumber) ? parsedPinNumber : 13;
 
   if (!["boolean", "int", "string"].includes(normalizedType)) {
     return { ok: false, reason: "invalid-variable-type" };
@@ -925,6 +1036,8 @@ async function updateThingVariableForUser({
           declaration = $4,
           variable_type = $5,
           permission = $6,
+          pin_number = $7,
+          pin_label = $8,
           updated_at = NOW()
         FROM things
         WHERE thing_variables.id = $1
@@ -933,7 +1046,16 @@ async function updateThingVariableForUser({
           AND things.owner_user_id = $3
         RETURNING thing_variables.id
       `,
-      [variableId, thingId, userId, variableName.trim(), normalizedType, normalizedPermission]
+      [
+        variableId,
+        thingId,
+        userId,
+        variableName.trim(),
+        normalizedType,
+        normalizedPermission,
+        normalizedPinNumber,
+        normalizedPinLabel
+      ]
     );
 
     if (!result.rows[0]) {
@@ -972,6 +1094,7 @@ async function setThingVariableValueForUser({
       UPDATE thing_variables
       SET
         current_value = $4,
+        current_value_text = CASE WHEN $4 THEN 'true' ELSE 'false' END,
         current_value_updated_at = NOW(),
         updated_at = NOW()
       FROM things
@@ -1049,6 +1172,7 @@ async function setDashboardTileVariableValueForUser({
       UPDATE thing_variables
       SET
         current_value = $4,
+        current_value_text = CASE WHEN $4 THEN 'true' ELSE 'false' END,
         current_value_updated_at = NOW(),
         updated_at = NOW()
       FROM dashboard_tiles
@@ -1335,8 +1459,10 @@ async function duplicateThingForUser({ thingId, userId }) {
           permission,
           declaration,
           pin_number,
+          pin_label,
           update_policy,
-          sync_enabled
+          sync_enabled,
+          current_value_text
         )
         SELECT
           $2,
@@ -1345,8 +1471,10 @@ async function duplicateThingForUser({ thingId, userId }) {
           thing_variables.permission,
           thing_variables.declaration,
           thing_variables.pin_number,
+          thing_variables.pin_label,
           thing_variables.update_policy,
-          thing_variables.sync_enabled
+          thing_variables.sync_enabled,
+          thing_variables.current_value_text
         FROM things
         JOIN thing_variables
           ON thing_variables.thing_id = things.id
@@ -1490,6 +1618,138 @@ async function updateDeviceHeartbeat({ deviceId, deviceSecret, status = "online"
   };
 }
 
+async function applyDeviceVariableUpdates({
+  deviceId,
+  deviceSecret,
+  analogPins = {},
+  variables = {}
+}) {
+  await ensureDevicesSchema();
+
+  const authResult = await db.query(
+    `
+      SELECT owner_user_id
+      FROM devices
+      WHERE device_id = $1
+        AND device_secret = $2
+    `,
+    [deviceId, deviceSecret]
+  );
+
+  if (!authResult.rows[0]) {
+    return { ok: false, updatedCount: 0 };
+  }
+
+  let updatedCount = 0;
+  const normalizedAnalogPins = Object.entries(analogPins || {}).reduce((accumulator, [pin, value]) => {
+    const normalizedPin = normalizePinLabel(pin);
+
+    if (normalizedPin) {
+      accumulator[normalizedPin] = value;
+    }
+
+    return accumulator;
+  }, {});
+
+  for (const [pinLabel, rawValue] of Object.entries(normalizedAnalogPins)) {
+    const matchResult = await db.query(
+      `
+        SELECT
+          thing_variables.id,
+          thing_variables.variable_type
+        FROM thing_variables
+        JOIN things
+          ON things.id = thing_variables.thing_id
+        JOIN devices
+          ON devices.device_id = things.device_id
+         AND devices.owner_user_id = things.owner_user_id
+        WHERE devices.device_id = $1
+          AND devices.device_secret = $2
+          AND thing_variables.pin_label = $3
+      `,
+      [deviceId, deviceSecret, pinLabel]
+    );
+
+    for (const row of matchResult.rows) {
+      const parsedValue = parseTypedVariableValue(row.variable_type, rawValue);
+
+      if (!parsedValue.ok) {
+        continue;
+      }
+
+      await db.query(
+        `
+          UPDATE thing_variables
+          SET
+            current_value = $2,
+            current_value_text = $3,
+            current_value_updated_at = NOW(),
+            updated_at = NOW()
+          WHERE id = $1
+        `,
+        [row.id, parsedValue.booleanValue, parsedValue.textValue]
+      );
+
+      updatedCount += 1;
+    }
+  }
+
+  const normalizedVariables = Object.entries(variables || {}).reduce((accumulator, [name, value]) => {
+    const normalizedName = typeof name === "string" ? name.trim() : "";
+
+    if (normalizedName) {
+      accumulator[normalizedName] = value;
+    }
+
+    return accumulator;
+  }, {});
+
+  for (const [variableName, rawValue] of Object.entries(normalizedVariables)) {
+    const matchResult = await db.query(
+      `
+        SELECT
+          thing_variables.id,
+          thing_variables.variable_type
+        FROM thing_variables
+        JOIN things
+          ON things.id = thing_variables.thing_id
+        JOIN devices
+          ON devices.device_id = things.device_id
+         AND devices.owner_user_id = things.owner_user_id
+        WHERE devices.device_id = $1
+          AND devices.device_secret = $2
+          AND thing_variables.variable_name = $3
+      `,
+      [deviceId, deviceSecret, variableName]
+    );
+
+    for (const row of matchResult.rows) {
+      const parsedValue = parseTypedVariableValue(row.variable_type, rawValue);
+
+      if (!parsedValue.ok) {
+        continue;
+      }
+
+      await db.query(
+        `
+          UPDATE thing_variables
+          SET
+            current_value = $2,
+            current_value_text = $3,
+            current_value_updated_at = NOW(),
+            updated_at = NOW()
+          WHERE id = $1
+        `,
+        [row.id, parsedValue.booleanValue, parsedValue.textValue]
+      );
+
+      updatedCount += 1;
+    }
+  }
+
+  return { ok: true, updatedCount };
+}
+
 module.exports = {
   addThingVariableForUser,
   addDashboardTileForUser,
@@ -1522,5 +1782,6 @@ module.exports = {
   setDeviceLedState,
   setThingVariableValueForUser,
   updateThingVariableForUser,
-  updateDeviceHeartbeat
+  updateDeviceHeartbeat,
+  applyDeviceVariableUpdates
 };

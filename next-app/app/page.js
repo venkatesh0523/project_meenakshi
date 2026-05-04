@@ -130,11 +130,29 @@ function formatVariableTypeLabel(value) {
 function formatThingVariableValue(variable) {
   const variableType = normalizeVariableType(variable?.type);
 
-  if (variableType !== "boolean") {
-    return "-";
+  if (variableType === "int") {
+    return variable?.currentValueText || "0";
+  }
+
+  if (variableType === "string") {
+    return variable?.currentValueText || "-";
   }
 
   return formatVariableValue(Boolean(variable?.currentValue));
+}
+
+function formatDashboardTileValue(tile) {
+  const variableType = normalizeVariableType(tile?.variable_type);
+
+  if (variableType === "int") {
+    return tile?.current_value_text || "0";
+  }
+
+  if (variableType === "string") {
+    return tile?.current_value_text || "-";
+  }
+
+  return formatVariableValue(Boolean(tile?.current_value));
 }
 
 function getDeviceConnectionState(device) {
@@ -177,6 +195,20 @@ function buildDeviceHeartbeatUrl(origin, device) {
 
 function buildMqttCommandTopic(device) {
   return `farm1/${device.device_id}/cmd`;
+}
+
+function buildHeartbeatPayloadExample(device) {
+  return JSON.stringify(
+    {
+      deviceSecret: device.device_secret || "replace-with-device-secret",
+      status: "online",
+      analogPins: {
+        A5: 612
+      }
+    },
+    null,
+    2
+  );
 }
 
 function buildDeviceSketchSnippet(origin, device) {
@@ -660,6 +692,7 @@ async function addThingVariable(formData) {
   const variableName = normalizeField(formData.get("variableName"));
   const variableType = normalizeVariableType(formData.get("variableType"));
   const permission = "read_write";
+  const pinLabel = normalizeField(formData.get("pinLabel"));
 
   if (!thingId || !variableName) {
     redirect(
@@ -675,7 +708,8 @@ async function addThingVariable(formData) {
     userId: user.id,
     variableName,
     variableType,
-    permission
+    permission,
+    pinLabel
   });
 
   if (!result.ok) {
@@ -737,6 +771,7 @@ async function updateThingVariable(formData) {
   const variableName = normalizeField(formData.get("variableName"));
   const variableType = normalizeVariableType(formData.get("variableType"));
   const permission = "read_write";
+  const pinLabel = normalizeField(formData.get("pinLabel"));
 
   if (!thingId || !variableId || !variableName) {
     redirect(buildRedirect("/", { builder: "things", thingId, authError: "Choose a valid variable." }));
@@ -748,7 +783,8 @@ async function updateThingVariable(formData) {
     userId: user.id,
     variableName,
     variableType,
-    permission
+    permission,
+    pinLabel
   });
 
   if (!result.ok) {
@@ -1146,7 +1182,9 @@ export default async function HomePage({ searchParams }) {
       variableId: variable.id,
       variableName: variable.name,
       variableType: variable.type,
-      variablePermission: variable.permission
+      variablePermission: variable.permission,
+      pinLabel: variable.pinLabel,
+      currentValueText: variable.currentValueText
     }))
   );
   const thingSketchFiles = selectedThing ? buildThingSketchFiles(selectedThing, requestOrigin) : [];
@@ -1320,6 +1358,7 @@ export default async function HomePage({ searchParams }) {
                                         <option value="int">Int</option>
                                         <option value="string">String</option>
                                       </select>
+                                      <input className="input" name="pinLabel" placeholder="13 or A5" />
                                       <button className="button buttonOn" type="submit">
                                         Add Variable
                                       </button>
@@ -1332,6 +1371,7 @@ export default async function HomePage({ searchParams }) {
                                 <div className="thingCloudTable">
                                   <div className="thingCloudTableHead">
                                     <span>Name</span>
+                                    <span>Pin</span>
                                     <span>Last Value</span>
                                     <span>Last Update</span>
                                     <span>Actions</span>
@@ -1340,6 +1380,7 @@ export default async function HomePage({ searchParams }) {
                                   {selectedThing.variables.map((variable) => (
                                     <div className="thingCloudTableRow" key={variable.id}>
                                       <strong>{variable.name} · {formatVariableTypeLabel(variable.type)}</strong>
+                                      <span>{variable.pinLabel || variable.pinNumber || "-"}</span>
                                       <span>{formatThingVariableValue(variable)}</span>
                                       <span>{formatDeviceDate(variable.currentValueUpdatedAt || variable.updatedAt || selectedThing.updated_at)}</span>
                                       <div className="thingCloudRowActions">
@@ -1368,6 +1409,12 @@ export default async function HomePage({ searchParams }) {
                                             <option value="int">Int</option>
                                             <option value="string">String</option>
                                           </select>
+                                          <input
+                                            className="input"
+                                            name="pinLabel"
+                                            defaultValue={variable.pinLabel || variable.pinNumber || "13"}
+                                            placeholder="13 or A5"
+                                          />
                                           <button className="button buttonGhost" type="submit">
                                             Save
                                           </button>
@@ -1590,7 +1637,7 @@ export default async function HomePage({ searchParams }) {
                                         {thing.variables.length > 0 ? (
                                           thing.variables.map((variable) => (
                                             <span className="builderMiniPill" key={variable.id || variable.name}>
-                                              {variable.name} · {formatVariableTypeLabel(variable.type)}
+                                              {variable.name} · {formatVariableTypeLabel(variable.type)} · {variable.pinLabel || variable.pinNumber || "-"}
                                             </span>
                                           ))
                                         ) : (
@@ -1606,6 +1653,7 @@ export default async function HomePage({ searchParams }) {
                                           <option value="int">Int</option>
                                           <option value="string">String</option>
                                         </select>
+                                        <input className="input" name="pinLabel" placeholder="13 or A5" />
                                         <button className="button buttonOn" type="submit">
                                           Add Variable
                                         </button>
@@ -1693,6 +1741,15 @@ export default async function HomePage({ searchParams }) {
                                 <div className="deviceConfigRow">
                                   <span>Heartbeat URL</span>
                                   <code>{buildDeviceHeartbeatUrl(requestOrigin, device)}</code>
+                                </div>
+                                <div className="deviceSketchBlock">
+                                  <div className="deviceSketchHeader">
+                                    <strong>Heartbeat Payload Example</strong>
+                                    <span>Send your potentiometer reading from `A5` in the JSON body to update value widgets.</span>
+                                  </div>
+                                  <pre className="deviceSketchCode">
+                                    <code>{buildHeartbeatPayloadExample(device)}</code>
+                                  </pre>
                                 </div>
                                 <div className="deviceConfigRow">
                                   <span>MQTT Command Topic</span>
@@ -1835,7 +1892,7 @@ export default async function HomePage({ searchParams }) {
 
                                     {tile.tile_type === "value_display" ? (
                                       <div className="dashboardValuePreview">
-                                        <strong>{formatVariableValue(Boolean(tile.current_value))}</strong>
+                                        <strong>{formatDashboardTileValue(tile)}</strong>
                                         <span>{tile.variable_name || "Value"}</span>
                                       </div>
                                     ) : null}
