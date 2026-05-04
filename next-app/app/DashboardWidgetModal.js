@@ -2,21 +2,58 @@
 
 import { useMemo, useState } from "react";
 
+function getWidgetLabels(widgetType) {
+  if (widgetType === "value_display") {
+    return {
+      name: "Value Display",
+      addButton: "Add Value",
+      helperCopy: "Pick one linked variable for this dashboard tile.",
+      searchPlaceholder: "Search things or variables",
+      emptyTitle: "No variables found",
+      emptyCopy: "Create a Thing variable first, then link it here.",
+      selectPlaceholder: "Select Variable",
+      unselectedSummary: "No variable selected",
+      submitLabel: "Add Value Display"
+    };
+  }
+
+  return {
+    name: "Switch",
+    addButton: "Add Switch",
+    helperCopy: "Pick one linked switch variable for this dashboard tile.",
+    searchPlaceholder: "Search things or switch variables",
+    emptyTitle: "No switch variables found",
+    emptyCopy: "Create a Thing switch first, then link it here.",
+    selectPlaceholder: "Select Switch",
+    unselectedSummary: "No switch selected",
+    submitLabel: "Add Switch"
+  };
+}
+
 export default function DashboardWidgetModal({ action, dashboardId, variableOptions }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [widgetType, setWidgetType] = useState("switch");
   const [tileName, setTileName] = useState("Switch");
   const [selectedVariableId, setSelectedVariableId] = useState("");
+  const widgetLabels = getWidgetLabels(widgetType);
 
   function selectWidgetType(nextType) {
     setWidgetType(nextType);
     setTileName(nextType === "value_display" ? "Value Display" : "Switch");
+    setSelectedVariableId("");
   }
 
   const filteredVariables = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     return variableOptions.filter((option) => {
+      const matchesWidgetType =
+        widgetType === "switch" ? option.variableType === "boolean" : true;
+
+      if (!matchesWidgetType) {
+        return false;
+      }
+
       if (!normalizedSearch) {
         return true;
       }
@@ -26,10 +63,10 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
         option.variableName.toLowerCase().includes(normalizedSearch)
       );
     });
-  }, [searchTerm, variableOptions]);
+  }, [searchTerm, variableOptions, widgetType]);
 
   const selectedVariable =
-    variableOptions.find((item) => String(item.variableId) === selectedVariableId) || null;
+    filteredVariables.find((item) => String(item.variableId) === selectedVariableId) || null;
 
   return (
     <>
@@ -60,16 +97,14 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
             <div className="widgetModalSimple">
               <section className="widgetModalPanel">
                 <div className="widgetSimpleHeader">
-                  <strong>{widgetType === "value_display" ? "Value Display" : "Switch"} Widgets</strong>
-                  <p className="sectionCopy">
-                    Pick one linked switch variable for this dashboard tile.
-                  </p>
+                  <strong>{widgetLabels.name} Widgets</strong>
+                  <p className="sectionCopy">{widgetLabels.helperCopy}</p>
                 </div>
 
                 <div className="widgetSearchRow">
                   <input
                     className="widgetSearchInput"
-                    placeholder="Search things or switch variables"
+                    placeholder={widgetLabels.searchPlaceholder}
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
                   />
@@ -95,8 +130,8 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
                     ))
                   ) : (
                     <div className="historyCard">
-                      <strong>No switch variables found</strong>
-                      <p className="sectionCopy">Create a Thing switch first, then link it here.</p>
+                      <strong>{widgetLabels.emptyTitle}</strong>
+                      <p className="sectionCopy">{widgetLabels.emptyCopy}</p>
                     </div>
                   )}
                 </div>
@@ -113,7 +148,7 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
 
                   <label className="thingField">
                     <span>Widget</span>
-                    <input className="input" value={widgetType === "value_display" ? "Value Display" : "Switch"} readOnly />
+                    <input className="input" value={widgetLabels.name} readOnly />
                   </label>
 
                   <label className="thingField">
@@ -133,11 +168,19 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
                       className="input"
                       name="linkedVariableId"
                       value={selectedVariableId}
-                      onChange={(event) => setSelectedVariableId(event.target.value)}
+                      onChange={(event) => {
+                        const nextVariableId = event.target.value;
+                        const nextVariable =
+                          filteredVariables.find((variable) => String(variable.variableId) === nextVariableId) || null;
+                        setSelectedVariableId(nextVariableId);
+                        if (nextVariable?.variableName) {
+                          setTileName(nextVariable.variableName);
+                        }
+                      }}
                       required
                     >
-                      <option value="">{widgetType === "value_display" ? "Select Variable" : "Select Switch"}</option>
-                      {variableOptions.map((variable) => (
+                      <option value="">{widgetLabels.selectPlaceholder}</option>
+                      {filteredVariables.map((variable) => (
                         <option key={variable.variableId} value={variable.variableId}>
                           {variable.thingName} - {variable.variableName}
                         </option>
@@ -147,13 +190,11 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
 
                   <div className="widgetPreviewSummary">
                     <span>Selected</span>
-                    <strong>{widgetType === "value_display" ? "Value Display" : "Switch"}</strong>
+                    <strong>{widgetLabels.name}</strong>
                     <strong>
                       {selectedVariable
                         ? `${selectedVariable.thingName} / ${selectedVariable.variableName}`
-                        : widgetType === "value_display"
-                          ? "No variable selected"
-                          : "No switch selected"}
+                        : widgetLabels.unselectedSummary}
                     </strong>
                   </div>
 
@@ -162,7 +203,7 @@ export default function DashboardWidgetModal({ action, dashboardId, variableOpti
                       Cancel
                     </button>
                     <button className="button buttonOn" type="submit" disabled={!selectedVariableId}>
-                      {widgetType === "value_display" ? "Add Value Display" : "Add Switch"}
+                      {widgetLabels.submitLabel}
                     </button>
                   </div>
                 </form>

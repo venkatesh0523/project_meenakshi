@@ -1098,7 +1098,9 @@ export default async function HomePage({ searchParams }) {
       thingId: thing.thing_id,
       thingName: thing.thing_name,
       variableId: variable.id,
-      variableName: variable.name
+      variableName: variable.name,
+      variableType: variable.type,
+      variablePermission: variable.permission
     }))
   );
   const thingSketchFiles = selectedThing ? buildThingSketchFiles(selectedThing, requestOrigin) : [];
@@ -1797,7 +1799,7 @@ export default async function HomePage({ searchParams }) {
                                     </div>
                                   ) : (
                                     <div className="dashboardCanvasTileMeta dashboardCanvasTileMetaView">
-                                      <span>{tile.variable_name || "Linked switch"}</span>
+                                      <span>{tile.variable_name || "Linked variable"}</span>
                                       <strong>{formatDeviceDate(tile.current_value_updated_at || tile.updated_at)}</strong>
                                     </div>
                                   )}
