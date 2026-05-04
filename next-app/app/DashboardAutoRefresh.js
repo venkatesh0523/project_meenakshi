@@ -9,7 +9,7 @@ export default function DashboardAutoRefresh() {
   useEffect(() => {
     const intervalId = setInterval(() => {
       router.refresh();
-    }, 15000);
+    }, 2000);
 
     return () => clearInterval(intervalId);
   }, [router]);

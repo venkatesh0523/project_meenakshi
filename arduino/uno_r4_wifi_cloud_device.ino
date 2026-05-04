@@ -15,17 +15,23 @@ const bool CLOUD_USE_SSL = false;
 
 const char* DEVICE_ID = "arduino-e4d35a2d-790a-44d8-92fa-19152bcfabc1";
 const char* DEVICE_SECRET = "im1rAljuqaF_O77xMfHOiz4E";
+const char* VALUE_VARIABLE_NAME = "display_val";
 
 const int LED_PIN = 13;
+const int POTENTIOMETER_PIN = A5;
 const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
+const unsigned long SENSOR_REPORT_INTERVAL_MS = 750;
 const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
+const int SENSOR_REPORT_DELTA = 8;
 
 WiFiClient mqttWifiClient;
 PubSubClient mqttClient(mqttWifiClient);
 
 unsigned long lastHeartbeatAt = 0;
 unsigned long lastMqttRetryAt = 0;
+unsigned long lastSensorReportAt = 0;
 String currentLedState = "OFF";
+int lastReportedPotentiometerValue = -1;
 
 String commandTopic = String("farm1/") + DEVICE_ID + "/cmd";
 String statusTopic = String("farm1/") + DEVICE_ID + "/status";
@@ -110,8 +116,11 @@ void sendHeartbeat(const char* status) {
   }
 
   const String path = String("/api/devices/") + DEVICE_ID + "/heartbeat";
+  const int potentiometerValue = analogRead(POTENTIOMETER_PIN);
   const String body =
-      String("{\"deviceSecret\":\"") + DEVICE_SECRET + "\",\"status\":\"" + status + "\"}";
+      String("{\"deviceSecret\":\"") + DEVICE_SECRET + "\",\"status\":\"" + status +
+      "\",\"analogPins\":{\"A5\":" + String(potentiometerValue) + "},\"variables\":{\"" +
+      VALUE_VARIABLE_NAME + "\":" + String(potentiometerValue) + "}}";
 
   client.print(String("POST ") + path + " HTTP/1.1\r\n");
   client.print(String("Host: ") + CLOUD_HOST + ":" + String(CLOUD_PORT) + "\r\n");
@@ -123,6 +132,8 @@ void sendHeartbeat(const char* status) {
   const String response = readHttpResponse(client);
   client.stop();
 
+  Serial.print("A5 potentiometer: ");
+  Serial.println(potentiometerValue);
   Serial.println("Heartbeat response:");
   Serial.println(response);
   lastHeartbeatAt = millis();
@@ -186,6 +197,7 @@ void connectMqtt() {
 
 void setup() {
   pinMode(LED_PIN, OUTPUT);
+  pinMode(POTENTIOMETER_PIN, INPUT);
   digitalWrite(LED_PIN, LOW);
 
   Serial.begin(115200);
@@ -211,6 +223,18 @@ void loop() {
   }
 
   if (WiFi.status() == WL_CONNECTED && millis() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
+    sendHeartbeat("online");
+  }
+
+  const int potentiometerValue = analogRead(POTENTIOMETER_PIN);
+  const bool sensorReportDue = millis() - lastSensorReportAt >= SENSOR_REPORT_INTERVAL_MS;
+  const bool sensorChangedEnough =
+      lastReportedPotentiometerValue < 0 ||
+      abs(potentiometerValue - lastReportedPotentiometerValue) >= SENSOR_REPORT_DELTA;
+
+  if (WiFi.status() == WL_CONNECTED && sensorReportDue && sensorChangedEnough) {
+    lastSensorReportAt = millis();
+    lastReportedPotentiometerValue = potentiometerValue;
     sendHeartbeat("online");
   }
 }
