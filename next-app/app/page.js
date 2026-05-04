@@ -95,6 +95,48 @@ function formatVariableValue(value) {
   return value ? "true" : "false";
 }
 
+function normalizeVariableType(value) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+
+  if (normalized === "bool") {
+    return "boolean";
+  }
+
+  if (normalized === "integer") {
+    return "int";
+  }
+
+  if (["boolean", "int", "string"].includes(normalized)) {
+    return normalized;
+  }
+
+  return "boolean";
+}
+
+function formatVariableTypeLabel(value) {
+  const variableType = normalizeVariableType(value);
+
+  if (variableType === "int") {
+    return "Int";
+  }
+
+  if (variableType === "string") {
+    return "String";
+  }
+
+  return "Boolean";
+}
+
+function formatThingVariableValue(variable) {
+  const variableType = normalizeVariableType(variable?.type);
+
+  if (variableType !== "boolean") {
+    return "-";
+  }
+
+  return formatVariableValue(Boolean(variable?.currentValue));
+}
+
 function getDeviceConnectionState(device) {
   if (!device.last_seen_at) {
     return {
@@ -616,7 +658,7 @@ async function addThingVariable(formData) {
   const user = await requireUser();
   const thingId = normalizeField(formData.get("thingId"));
   const variableName = normalizeField(formData.get("variableName"));
-  const variableType = "boolean";
+  const variableType = normalizeVariableType(formData.get("variableType"));
   const permission = "read_write";
 
   if (!thingId || !variableName) {
@@ -643,6 +685,8 @@ async function addThingVariable(formData) {
         authError:
           result.reason === "duplicate-variable"
             ? `Variable ${variableName} already exists for this thing.`
+            : result.reason === "invalid-variable-type"
+              ? "Choose a valid variable type."
             : "That thing is not connected to your account."
       })
     );
@@ -691,7 +735,7 @@ async function updateThingVariable(formData) {
   const thingId = normalizeField(formData.get("thingId"));
   const variableId = normalizeField(formData.get("variableId"));
   const variableName = normalizeField(formData.get("variableName"));
-  const variableType = "boolean";
+  const variableType = normalizeVariableType(formData.get("variableType"));
   const permission = "read_write";
 
   if (!thingId || !variableId || !variableName) {
@@ -711,6 +755,8 @@ async function updateThingVariable(formData) {
     const message =
       result.reason === "duplicate-variable"
         ? `Variable ${variableName} already exists for this thing.`
+        : result.reason === "invalid-variable-type"
+          ? "Choose a valid variable type."
         : "Unable to update the variable.";
 
     redirect(buildRedirect("/", { builder: "things", thingId, authError: message }));
@@ -1259,7 +1305,7 @@ export default async function HomePage({ searchParams }) {
                                 <div>
                                   <strong>Variables</strong>
                                   <p className="sectionCopy">
-                                    Define the switch data your Thing exchanges with the device and shows on dashboards.
+                                    Define the data your Thing exchanges with the device and shows on dashboards.
                                   </p>
                                 </div>
 
@@ -1268,9 +1314,14 @@ export default async function HomePage({ searchParams }) {
                                   <div className="thingCloudCreatePanel">
                                     <form action={addThingVariable} className="thingCloudVariableForm">
                                       <input type="hidden" name="thingId" value={selectedThing.thing_id} />
-                                      <input className="input" name="variableName" placeholder="switch_1" required />
+                                      <input className="input" name="variableName" placeholder="temperature" required />
+                                      <select className="input" name="variableType" defaultValue="boolean">
+                                        <option value="boolean">Boolean</option>
+                                        <option value="int">Int</option>
+                                        <option value="string">String</option>
+                                      </select>
                                       <button className="button buttonOn" type="submit">
-                                        Add Switch
+                                        Add Variable
                                       </button>
                                     </form>
                                   </div>
@@ -1288,22 +1339,35 @@ export default async function HomePage({ searchParams }) {
 
                                   {selectedThing.variables.map((variable) => (
                                     <div className="thingCloudTableRow" key={variable.id}>
-                                      <strong>{variable.name}</strong>
-                                      <span>{formatVariableValue(Boolean(variable.currentValue))}</span>
+                                      <strong>{variable.name} · {formatVariableTypeLabel(variable.type)}</strong>
+                                      <span>{formatThingVariableValue(variable)}</span>
                                       <span>{formatDeviceDate(variable.currentValueUpdatedAt || variable.updatedAt || selectedThing.updated_at)}</span>
                                       <div className="thingCloudRowActions">
-                                        <form action={toggleThingVariable}>
-                                          <input type="hidden" name="thingId" value={selectedThing.thing_id} />
-                                          <input type="hidden" name="variableId" value={variable.id} />
-                                          <input type="hidden" name="nextValue" value={variable.currentValue ? "false" : "true"} />
-                                          <button className="button buttonGhost" type="submit">
-                                            {variable.currentValue ? "Turn Off" : "Turn On"}
-                                          </button>
-                                        </form>
+                                        {normalizeVariableType(variable.type) === "boolean" ? (
+                                          <form action={toggleThingVariable}>
+                                            <input type="hidden" name="thingId" value={selectedThing.thing_id} />
+                                            <input type="hidden" name="variableId" value={variable.id} />
+                                            <input type="hidden" name="nextValue" value={variable.currentValue ? "false" : "true"} />
+                                            <button className="button buttonGhost" type="submit">
+                                              {variable.currentValue ? "Turn Off" : "Turn On"}
+                                            </button>
+                                          </form>
+                                        ) : (
+                                          <span className="builderMiniPill">No toggle for {formatVariableTypeLabel(variable.type)}</span>
+                                        )}
                                         <form action={updateThingVariable} className="thingCloudInlineForm">
                                           <input type="hidden" name="thingId" value={selectedThing.thing_id} />
                                           <input type="hidden" name="variableId" value={variable.id} />
                                           <input className="input" name="variableName" defaultValue={variable.name} required />
+                                          <select
+                                            className="input"
+                                            name="variableType"
+                                            defaultValue={normalizeVariableType(variable.type)}
+                                          >
+                                            <option value="boolean">Boolean</option>
+                                            <option value="int">Int</option>
+                                            <option value="string">String</option>
+                                          </select>
                                           <button className="button buttonGhost" type="submit">
                                             Save
                                           </button>
@@ -1321,8 +1385,8 @@ export default async function HomePage({ searchParams }) {
                                 </div>
                               ) : (
                                 <div className="historyCard">
-                                  <strong>No switch variables yet</strong>
-                                  <p className="sectionCopy">Use `+ Variable` to add your first switch.</p>
+                                  <strong>No variables yet</strong>
+                                  <p className="sectionCopy">Use `+ Variable` to add your first boolean, int, or string variable.</p>
                                 </div>
                               )}
                             </section>
@@ -1526,19 +1590,24 @@ export default async function HomePage({ searchParams }) {
                                         {thing.variables.length > 0 ? (
                                           thing.variables.map((variable) => (
                                             <span className="builderMiniPill" key={variable.id || variable.name}>
-                                              {variable.name} · Switch
+                                              {variable.name} · {formatVariableTypeLabel(variable.type)}
                                             </span>
                                           ))
                                         ) : (
-                                          <span className="builderMiniPill">No switch added yet</span>
+                                          <span className="builderMiniPill">No variables added yet</span>
                                         )}
                                       </div>
 
                                       <form action={addThingVariable} className="thingVariableForm">
                                         <input type="hidden" name="thingId" value={thing.thing_id} />
-                                        <input className="input" name="variableName" placeholder="switch_1" required />
+                                        <input className="input" name="variableName" placeholder="temperature" required />
+                                        <select className="input" name="variableType" defaultValue="boolean">
+                                          <option value="boolean">Boolean</option>
+                                          <option value="int">Int</option>
+                                          <option value="string">String</option>
+                                        </select>
                                         <button className="button buttonOn" type="submit">
-                                          Add Switch
+                                          Add Variable
                                         </button>
                                       </form>
                                     </div>

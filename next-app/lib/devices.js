@@ -820,8 +820,18 @@ async function addThingVariableForUser({
 }) {
   await ensureDevicesSchema();
   const normalizedName = variableName.trim();
-  const normalizedType = variableType.trim().toLowerCase();
+  const rawType = variableType.trim().toLowerCase();
+  const normalizedType =
+    rawType === "bool"
+      ? "boolean"
+      : rawType === "integer"
+        ? "int"
+        : rawType;
   const normalizedPermission = permission.trim().toLowerCase();
+
+  if (!["boolean", "int", "string"].includes(normalizedType)) {
+    return { ok: false, reason: "invalid-variable-type" };
+  }
 
   const thingResult = await db.query(
     `
@@ -893,6 +903,19 @@ async function updateThingVariableForUser({
   permission
 }) {
   await ensureDevicesSchema();
+  const rawType = variableType.trim().toLowerCase();
+  const normalizedType =
+    rawType === "bool"
+      ? "boolean"
+      : rawType === "integer"
+        ? "int"
+        : rawType;
+  const normalizedPermission = permission.trim().toLowerCase();
+
+  if (!["boolean", "int", "string"].includes(normalizedType)) {
+    return { ok: false, reason: "invalid-variable-type" };
+  }
+
   try {
     const result = await db.query(
       `
@@ -910,7 +933,7 @@ async function updateThingVariableForUser({
           AND things.owner_user_id = $3
         RETURNING thing_variables.id
       `,
-      [variableId, thingId, userId, variableName.trim(), variableType.trim().toLowerCase(), permission.trim().toLowerCase()]
+      [variableId, thingId, userId, variableName.trim(), normalizedType, normalizedPermission]
     );
 
     if (!result.rows[0]) {
