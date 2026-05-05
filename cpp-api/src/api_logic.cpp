@@ -81,10 +81,20 @@ std::string extractRequestMethod(const std::string& request) {
   return request.substr(0, methodEnd);
 }
 
+std::string extractRequestBody(const std::string& request) {
+  const std::size_t bodyStart = request.find("\r\n\r\n");
+  if (bodyStart == std::string::npos) {
+    return "";
+  }
+
+  return request.substr(bodyStart + 4);
+}
+
 std::string handleHttpRequest(
     const std::string& request,
     const std::string& defaultDeviceId,
-    const LedCommandPublisher& publishLedCommand) {
+    const LedCommandPublisher& publishLedCommand,
+    const ValueUpdateForwarder& forwardValueUpdate) {
   const std::string method = extractRequestMethod(request);
   const std::string target = extractRequestTarget(request);
 
@@ -138,6 +148,35 @@ std::string handleHttpRequest(
         jsonEscape(deviceId) + "\",\"command\":\"" + command + "\",\"topic\":\"" +
         jsonEscape(topic) + "\"}";
     return buildJsonResponse(200, "OK", body);
+  }
+
+  if (method == "POST" && pathParts.size() == 4 && pathParts[0] == "api" &&
+      pathParts[1] == "devices" && pathParts[3] == "heartbeat") {
+    const std::string deviceId = pathParts[2];
+    const std::string requestBody = extractRequestBody(request);
+
+    if (requestBody.empty()) {
+      return buildJsonResponse(
+          400,
+          "Bad Request",
+          R"({"message":"Request body is required"})");
+    }
+
+    const ForwardedHttpResponse upstreamResponse =
+        forwardValueUpdate(deviceId, requestBody);
+
+    if (!upstreamResponse.ok) {
+      return buildJsonResponse(
+          502,
+          "Bad Gateway",
+          std::string("{\"message\":\"") + jsonEscape(upstreamResponse.errorMessage) + "\"}");
+    }
+
+    return buildJsonResponse(
+        upstreamResponse.statusCode,
+        upstreamResponse.statusText,
+        upstreamResponse.body.empty() ? R"({"message":"Upstream response was empty"})"
+                                      : upstreamResponse.body);
   }
 
   return buildJsonResponse(404, "Not Found", R"({"message":"Route not found"})");

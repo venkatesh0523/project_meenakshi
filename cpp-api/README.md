@@ -1,12 +1,15 @@
-# C++ LED API
+# C++ Device API
 
-This service provides a simple C++ REST API for LED control over MQTT.
+This service provides a simple C++ REST API for device command and sensor forwarding.
 
 ## Endpoints
 
 - `GET /health`
 - `POST /api/led/on`
 - `POST /api/led/off`
+- `POST /api/devices/:deviceId/commands/on`
+- `POST /api/devices/:deviceId/commands/off`
+- `POST /api/devices/:deviceId/heartbeat`
 
 ## MQTT behavior
 
@@ -14,6 +17,7 @@ This service provides a simple C++ REST API for LED control over MQTT.
 - Broker port comes from `MQTT_PORT`
 - Device ID comes from `LED_DEVICE_ID`
 - Commands publish to `farm1/<deviceId>/cmd`
+- Value updates forward to the Next app using `NEXT_APP_HOST` and `NEXT_APP_PORT`
 
 Default topic:
 
@@ -33,6 +37,9 @@ Then call:
 curl http://localhost:8080/health
 curl -X POST http://localhost:8080/api/led/on
 curl -X POST http://localhost:8080/api/led/off
+curl -X POST http://localhost:8080/api/devices/arduino-01/heartbeat \
+  -H 'Content-Type: application/json' \
+  -d '{"deviceSecret":"secret","status":"online","variables":{"display_val":612}}'
 ```
 
 ## Tests
@@ -45,4 +52,4 @@ cmake --build cpp-api/build
 ctest --test-dir cpp-api/build --output-on-failure
 ```
 
-The unit tests cover request parsing, health response, default LED commands, device-specific LED commands, publish failures, and unknown routes.
+The unit tests cover request parsing, health response, LED commands, heartbeat forwarding, publish failures, and unknown routes.

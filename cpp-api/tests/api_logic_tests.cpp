@@ -15,6 +15,14 @@ std::string request(const std::string& method, const std::string& target) {
   return method + " " + target + " HTTP/1.1\r\nHost: localhost\r\n\r\n";
 }
 
+std::string requestWithBody(
+    const std::string& method,
+    const std::string& target,
+    const std::string& body) {
+  return method + " " + target + " HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: " +
+         std::to_string(body.size()) + "\r\n\r\n" + body;
+}
+
 bool contains(const std::string& value, const std::string& expected) {
   return value.find(expected) != std::string::npos;
 }
@@ -31,6 +39,9 @@ void testHealthRouteDoesNotPublish() {
       [&](const std::string&, const std::string&, std::string&) {
         publisherCalled = true;
         return true;
+      },
+      [&](const std::string&, const std::string&) {
+        return farm::ForwardedHttpResponse{false, 0, "", "", "not-used"};
       });
 
   assertStatus(response, "200 OK");
@@ -46,6 +57,9 @@ void testDefaultLedOnPublishesDefaultDevice() {
       [&](const std::string& deviceId, const std::string& command, std::string&) {
         published.push_back({deviceId, command});
         return true;
+      },
+      [&](const std::string&, const std::string&) {
+        return farm::ForwardedHttpResponse{false, 0, "", "", "not-used"};
       });
 
   assertStatus(response, "200 OK");
@@ -63,6 +77,9 @@ void testDefaultLedOffPublishesDefaultDevice() {
       [&](const std::string& deviceId, const std::string& command, std::string&) {
         published.push_back({deviceId, command});
         return true;
+      },
+      [&](const std::string&, const std::string&) {
+        return farm::ForwardedHttpResponse{false, 0, "", "", "not-used"};
       });
 
   assertStatus(response, "200 OK");
@@ -79,6 +96,9 @@ void testSpecificDeviceCommandPublishesRequestedDevice() {
       [&](const std::string& deviceId, const std::string& command, std::string&) {
         published.push_back({deviceId, command});
         return true;
+      },
+      [&](const std::string&, const std::string&) {
+        return farm::ForwardedHttpResponse{false, 0, "", "", "not-used"};
       });
 
   assertStatus(response, "200 OK");
@@ -97,6 +117,9 @@ void testUnknownRouteReturnsNotFound() {
       [&](const std::string&, const std::string&, std::string&) {
         publisherCalled = true;
         return true;
+      },
+      [&](const std::string&, const std::string&) {
+        return farm::ForwardedHttpResponse{false, 0, "", "", "not-used"};
       });
 
   assertStatus(response, "404 Not Found");
@@ -111,6 +134,9 @@ void testPublishFailureReturnsEscapedServerError() {
       [&](const std::string&, const std::string&, std::string& errorMessage) {
         errorMessage = R"(broker "down")";
         return false;
+      },
+      [&](const std::string&, const std::string&) {
+        return farm::ForwardedHttpResponse{false, 0, "", "", "not-used"};
       });
 
   assertStatus(response, "500 Internal Server Error");
@@ -126,7 +152,68 @@ void testHelpers() {
 
   assert(farm::extractRequestMethod(request("POST", "/health")) == "POST");
   assert(farm::extractRequestTarget(request("POST", "/health")) == "/health");
+  assert(farm::extractRequestBody(requestWithBody("POST", "/health", R"({"ok":true})")) == R"({"ok":true})");
   assert(farm::jsonEscape(R"(a\b"c)") == R"(a\\b\"c)");
+}
+
+void testDeviceHeartbeatRouteForwardsValueUpdate() {
+  std::string forwardedDeviceId;
+  std::string forwardedBody;
+
+  const std::string response = farm::handleHttpRequest(
+      requestWithBody(
+          "POST",
+          "/api/devices/arduino-uno/heartbeat",
+          R"({"deviceSecret":"abc","variables":{"display_val":612}})"),
+      "default-device",
+      [&](const std::string&, const std::string&, std::string&) {
+        return false;
+      },
+      [&](const std::string& deviceId, const std::string& requestBody) {
+        forwardedDeviceId = deviceId;
+        forwardedBody = requestBody;
+        return farm::ForwardedHttpResponse{
+            true,
+            200,
+            "OK",
+            R"({"message":"Heartbeat accepted","variableUpdatesApplied":1})",
+            ""};
+      });
+
+  assertStatus(response, "200 OK");
+  assert(forwardedDeviceId == "arduino-uno");
+  assert(forwardedBody == R"({"deviceSecret":"abc","variables":{"display_val":612}})");
+  assert(contains(response, R"("variableUpdatesApplied":1)"));
+}
+
+void testDeviceHeartbeatRouteRequiresBody() {
+  const std::string response = farm::handleHttpRequest(
+      request("POST", "/api/devices/arduino-uno/heartbeat"),
+      "default-device",
+      [&](const std::string&, const std::string&, std::string&) {
+        return false;
+      },
+      [&](const std::string&, const std::string&) {
+        return farm::ForwardedHttpResponse{true, 200, "OK", "{}", ""};
+      });
+
+  assertStatus(response, "400 Bad Request");
+  assert(contains(response, R"({"message":"Request body is required"})"));
+}
+
+void testDeviceHeartbeatRouteSurfacesUpstreamFailure() {
+  const std::string response = farm::handleHttpRequest(
+      requestWithBody("POST", "/api/devices/arduino-uno/heartbeat", R"({"deviceSecret":"abc"})"),
+      "default-device",
+      [&](const std::string&, const std::string&, std::string&) {
+        return false;
+      },
+      [&](const std::string&, const std::string&) {
+        return farm::ForwardedHttpResponse{false, 0, "", "", "Next app offline"};
+      });
+
+  assertStatus(response, "502 Bad Gateway");
+  assert(contains(response, R"({"message":"Next app offline"})"));
 }
 
 }  // namespace
@@ -139,5 +226,8 @@ int main() {
   testUnknownRouteReturnsNotFound();
   testPublishFailureReturnsEscapedServerError();
   testHelpers();
+  testDeviceHeartbeatRouteForwardsValueUpdate();
+  testDeviceHeartbeatRouteRequiresBody();
+  testDeviceHeartbeatRouteSurfacesUpstreamFailure();
   return 0;
 }

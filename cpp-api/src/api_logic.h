@@ -13,6 +13,18 @@ using LedCommandPublisher = std::function<bool(
     const std::string& command,
     std::string& errorMessage)>;
 
+struct ForwardedHttpResponse {
+  bool ok;
+  int statusCode;
+  std::string statusText;
+  std::string body;
+  std::string errorMessage;
+};
+
+using ValueUpdateForwarder = std::function<ForwardedHttpResponse(
+    const std::string& deviceId,
+    const std::string& requestBody)>;
+
 // Builds the complete HTTP response string expected by the socket server.
 std::string buildJsonResponse(
     int statusCode,
@@ -25,6 +37,9 @@ std::string extractRequestMethod(const std::string& request);
 // Extracts the path target from a raw request line.
 std::string extractRequestTarget(const std::string& request);
 
+// Extracts the HTTP request body after the blank-line separator.
+std::string extractRequestBody(const std::string& request);
+
 // Escapes only the characters this API may place into JSON string values.
 std::string jsonEscape(const std::string& value);
 
@@ -35,6 +50,7 @@ std::vector<std::string> splitPath(const std::string& path);
 std::string handleHttpRequest(
     const std::string& request,
     const std::string& defaultDeviceId,
-    const LedCommandPublisher& publishLedCommand);
+    const LedCommandPublisher& publishLedCommand,
+    const ValueUpdateForwarder& forwardValueUpdate);
 
 }  // namespace farm

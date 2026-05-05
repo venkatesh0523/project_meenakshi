@@ -35,6 +35,8 @@ services:
       MQTT_HOST: mqtt
       MQTT_PORT: 1883
       LED_DEVICE_ID: arduino-led-01
+      NEXT_APP_HOST: next-app
+      NEXT_APP_PORT: 3000
     ports:
       - "8080:8080"
     restart: unless-stopped
