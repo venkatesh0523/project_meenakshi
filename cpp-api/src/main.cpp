@@ -13,7 +13,7 @@
 #include <cstring>
 #include <iostream>
 #include <string>
-
+#include <sstream>
 namespace {
 
 volatile std::sig_atomic_t keepRunning = 1;
