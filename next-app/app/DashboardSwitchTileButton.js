@@ -1,10 +1,16 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 export default function DashboardSwitchTileButton({ isOn, dashboardId, tileId }) {
   const [currentValue, setCurrentValue] = useState(isOn);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!isPending) {
+      setCurrentValue(isOn);
+    }
+  }, [isOn, isPending]);
 
   async function handleToggle() {
     const nextValue = !currentValue;

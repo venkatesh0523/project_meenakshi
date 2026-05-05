@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { randomBytes, randomUUID } from "crypto";
-import DashboardAutoRefresh from "./DashboardAutoRefresh";
+import DashboardLiveBoard from "./DashboardLiveBoard";
 import DashboardSwitchTileButton from "./DashboardSwitchTileButton";
 import DashboardWidgetModal from "./DashboardWidgetModal";
 import DeviceSetupModal from "./DeviceSetupModal";
@@ -1245,7 +1245,6 @@ export default async function HomePage({ searchParams }) {
             </div>
           ) : (
             <>
-              <DashboardAutoRefresh />
               <div className="builderLayout">
                 <aside className="builderSidebar">
                   <div className="builderSidebarProfile">
@@ -1826,58 +1825,49 @@ export default async function HomePage({ searchParams }) {
                           ) : null}
 
                           <div className={`dashboardCanvasBoard ${dashboardMode === "view" ? "dashboardCanvasBoardView" : ""}`}>
-                            {selectedDashboard.tiles?.length ? (
+                            {dashboardMode === "view" ? (
+                              <DashboardLiveBoard
+                                dashboardId={selectedDashboard.id}
+                                initialTiles={selectedDashboard.tiles || []}
+                              />
+                            ) : selectedDashboard.tiles?.length ? (
                               selectedDashboard.tiles.map((tile) => (
                                 <article className={`dashboardCanvasTile dashboardCanvasTile${tile.tile_type}`} key={tile.id}>
                                   <div className="dashboardCanvasTileHead">
                                     <strong>{formatDashboardTileTypeLabel(tile.tile_type)}</strong>
-                                    {dashboardMode === "edit" ? (
-                                      <div className="dashboardTileEditActions">
-                                        <form action={moveDashboardTile}>
-                                          <input type="hidden" name="dashboardId" value={selectedDashboard.id} />
-                                          <input type="hidden" name="tileId" value={tile.id} />
-                                          <input type="hidden" name="direction" value="left" />
-                                          <button className="dashboardTileIconButton" type="submit" aria-label="Move left">
-                                            ←
-                                          </button>
-                                        </form>
-                                        <form action={moveDashboardTile}>
-                                          <input type="hidden" name="dashboardId" value={selectedDashboard.id} />
-                                          <input type="hidden" name="tileId" value={tile.id} />
-                                          <input type="hidden" name="direction" value="right" />
-                                          <button className="dashboardTileIconButton" type="submit" aria-label="Move right">
-                                            →
-                                          </button>
-                                        </form>
-                                        <form action={deleteDashboardTile}>
-                                          <input type="hidden" name="dashboardId" value={selectedDashboard.id} />
-                                          <input type="hidden" name="tileId" value={tile.id} />
-                                          <button className="dashboardTileDeleteButton" type="submit">
-                                            Delete
-                                          </button>
-                                        </form>
-                                      </div>
-                                    ) : (
-                                      <span className="dashboardCanvasExample">Example</span>
-                                    )}
+                                    <div className="dashboardTileEditActions">
+                                      <form action={moveDashboardTile}>
+                                        <input type="hidden" name="dashboardId" value={selectedDashboard.id} />
+                                        <input type="hidden" name="tileId" value={tile.id} />
+                                        <input type="hidden" name="direction" value="left" />
+                                        <button className="dashboardTileIconButton" type="submit" aria-label="Move left">
+                                          ←
+                                        </button>
+                                      </form>
+                                      <form action={moveDashboardTile}>
+                                        <input type="hidden" name="dashboardId" value={selectedDashboard.id} />
+                                        <input type="hidden" name="tileId" value={tile.id} />
+                                        <input type="hidden" name="direction" value="right" />
+                                        <button className="dashboardTileIconButton" type="submit" aria-label="Move right">
+                                          →
+                                        </button>
+                                      </form>
+                                      <form action={deleteDashboardTile}>
+                                        <input type="hidden" name="dashboardId" value={selectedDashboard.id} />
+                                        <input type="hidden" name="tileId" value={tile.id} />
+                                        <button className="dashboardTileDeleteButton" type="submit">
+                                          Delete
+                                        </button>
+                                      </form>
+                                    </div>
                                   </div>
 
                                   <div className="dashboardCanvasTileBody">
                                     {tile.tile_type === "switch" ? (
-                                      dashboardMode === "view" ? (
-                                        <div className="dashboardSwitchForm">
-                                          <DashboardSwitchTileButton
-                                            isOn={Boolean(tile.current_value)}
-                                            dashboardId={selectedDashboard.id}
-                                            tileId={tile.id}
-                                          />
-                                        </div>
-                                      ) : (
-                                        <div className={`dashboardSwitchPreview ${tile.current_value ? "dashboardSwitchPreviewOn" : ""}`}>
-                                          <span>{tile.current_value ? "ON" : "OFF"}</span>
-                                          <span className="dashboardSwitchKnob" />
-                                        </div>
-                                      )
+                                      <div className={`dashboardSwitchPreview ${tile.current_value ? "dashboardSwitchPreviewOn" : ""}`}>
+                                        <span>{tile.current_value ? "ON" : "OFF"}</span>
+                                        <span className="dashboardSwitchKnob" />
+                                      </div>
                                     ) : null}
 
                                     {tile.tile_type === "status" ? (
@@ -1918,17 +1908,10 @@ export default async function HomePage({ searchParams }) {
                                     ) : null}
                                   </div>
 
-                                  {dashboardMode === "edit" ? (
-                                    <div className="dashboardCanvasTileMeta">
-                                      <span>{tile.thing_name || "No thing linked"}</span>
-                                      <strong>{tile.variable_name || "-"}</strong>
-                                    </div>
-                                  ) : (
-                                    <div className="dashboardCanvasTileMeta dashboardCanvasTileMetaView">
-                                      <span>{tile.variable_name || "Linked variable"}</span>
-                                      <strong>{formatDeviceDate(tile.current_value_updated_at || tile.updated_at)}</strong>
-                                    </div>
-                                  )}
+                                  <div className="dashboardCanvasTileMeta">
+                                    <span>{tile.thing_name || "No thing linked"}</span>
+                                    <strong>{tile.variable_name || "-"}</strong>
+                                  </div>
                                 </article>
                               ))
                             ) : (
