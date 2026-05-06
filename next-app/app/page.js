@@ -334,18 +334,44 @@ function escapeCString(value) {
     .replace(/"/g, '\\"');
 }
 
+function safeText(value, fallback = "") {
+  return typeof value === "string" ? value : value == null ? fallback : String(value);
+}
+
+function sanitizeSketchPinLabel(value, fallback = "13") {
+  const normalized = safeText(value, fallback).trim();
+
+  if (/^A\d+$/i.test(normalized) || /^\d+$/.test(normalized)) {
+    return normalized.toUpperCase();
+  }
+
+  return fallback;
+}
+
 function buildThingSketchFiles(thing, origin) {
-  const variables = buildUniqueThingVariables((Array.isArray(thing.variables) ? thing.variables : []).map((variable) => ({
-    ...variable,
-    typeConfig: getThingVariableTypeConfig(variable.type)
-  }))).map((variable) => ({
+  const variables = buildUniqueThingVariables(
+    (Array.isArray(thing.variables) ? thing.variables : []).map((variable) => ({
+      ...variable,
+      name: safeText(variable?.name, "variable"),
+      type: normalizeVariableType(variable?.type),
+      permission: safeText(variable?.permission, "read_write"),
+      pinLabel: sanitizeSketchPinLabel(getThingPinLabel(variable), normalizeVariableType(variable?.type) === "int" ? "A5" : "13"),
+      typeConfig: getThingVariableTypeConfig(variable?.type)
+    }))
+  ).map((variable) => ({
     ...variable,
     callbackName: buildThingCallbackName(variable.codeName),
-    pinLabelValue: getThingPinLabel(variable),
+    pinLabelValue: sanitizeSketchPinLabel(variable.pinLabel, normalizeVariableType(variable.type) === "int" ? "A5" : "13"),
     pinConstantName: buildThingPinConstantName(variable.codeName),
     permissionToken: formatThingPermission(variable.permission)
   }));
-  const widgets = Array.isArray(thing.widgets) ? thing.widgets : [];
+  const widgets = (Array.isArray(thing.widgets) ? thing.widgets : []).map((widget) => ({
+    ...widget,
+    dashboard_name: safeText(widget?.dashboard_name, "Dashboard"),
+    tile_name: safeText(widget?.tile_name, "Widget"),
+    tile_type: safeText(widget?.tile_type, "widget"),
+    variable_name: safeText(widget?.variable_name, "")
+  }));
 
   let host = "localhost";
   try {
@@ -464,7 +490,7 @@ const char* CLOUD_HOST = "${host}";
 const int CLOUD_PORT = ${String(origin || "").startsWith("https://") ? 443 : 3000};
 const bool CLOUD_USE_SSL = ${String(origin || "").startsWith("https://") ? "true" : "false"};
 
-const char* DEVICE_ID = "${thing.device_id || "replace-with-device-id"}";
+const char* DEVICE_ID = "${safeText(thing.device_id, "replace-with-device-id")}";
 const char* DEVICE_SECRET = "${thing.device_id ? "replace-with-device-secret" : ""}";
 
 ${pinConstants}
@@ -657,13 +683,13 @@ void loop() {
         .join("\n")
     : "No dashboard widgets linked to this Thing yet.";
 
-  const configHeader = `#pragma once
+const configHeader = `#pragma once
 
-// Generated for Thing: ${thing.thing_name}
-// Device: ${thing.device_name || "Not linked yet"}
+// Generated for Thing: ${safeText(thing.thing_name, "Thing")}
+// Device: ${safeText(thing.device_name, "Not linked yet")}
 // Primary value variable: ${firstReadableValueName}
 
-const char* GENERATED_DEVICE_ID = "${thing.device_id || "replace-with-device-id"}";
+const char* GENERATED_DEVICE_ID = "${safeText(thing.device_id, "replace-with-device-id")}";
 const char* GENERATED_DEVICE_SECRET = "${thing.device_id ? "replace-with-device-secret" : ""}";
 
 ${variables.length
@@ -678,8 +704,8 @@ ${variables.length
     : "// No Thing variables yet. Add a switch or sensor variable in the Things page."}
 `;
 
-  const readme = `Thing: ${thing.thing_name}
-Device: ${thing.device_name || "Not linked yet"}
+  const readme = `Thing: ${safeText(thing.thing_name, "Thing")}
+Device: ${safeText(thing.device_name, "Not linked yet")}
 Cloud host: ${host}
 Variables: ${variables.length}
 Widgets: ${widgets.length}
@@ -697,7 +723,7 @@ ${widgetSummary}
 
   const widgetsFile = JSON.stringify(
     {
-      thing: thing.thing_name || "",
+      thing: safeText(thing.thing_name, ""),
       widgetCount: widgets.length,
       widgets
     },
@@ -1550,7 +1576,28 @@ export default async function HomePage({ searchParams }) {
       currentValueText: variable.currentValueText
     }))
   );
-  const thingSketchFiles = selectedThing ? buildThingSketchFiles(selectedThing, requestOrigin) : [];
+  let thingSketchFiles = [];
+
+  if (selectedThing) {
+    try {
+      thingSketchFiles = buildThingSketchFiles(selectedThing, requestOrigin);
+    } catch (error) {
+      console.error("Failed to build Thing sketch files", error);
+      thingSketchFiles = [
+        {
+          id: "error",
+          label: "sketch-error.txt",
+          content: `Unable to generate sketch files for this Thing right now.
+
+Thing: ${safeText(selectedThing?.thing_name, "Unknown")}
+Reason: ${safeText(error?.message, "Unknown error")}
+
+Try checking variable names, pin labels, and linked widget data, then refresh.`
+        }
+      ];
+    }
+  }
+
   const activeThingSketchFile =
     thingSketchFiles.find((file) => file.id === selectedSketchFile) || thingSketchFiles[0] || null;
 
