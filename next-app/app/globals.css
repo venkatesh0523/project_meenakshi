@@ -13,17 +13,17 @@
 }
 
 :root[data-theme="night"] {
-  --bg: #0f1720;
-  --panel: rgba(18, 29, 39, 0.88);
-  --text: #e7efe8;
-  --muted: #9fb0a5;
-  --line: rgba(231, 239, 232, 0.12);
-  --primary: #76d49b;
-  --primary-dark: #d5f3de;
-  --secondary: #f4b46f;
-  --shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
-  --theme-elevated: rgba(17, 24, 31, 0.74);
-  --theme-sidebar: rgba(12, 20, 28, 0.92);
+  --bg: #0b1220;
+  --panel: rgba(14, 22, 35, 0.9);
+  --text: #edf4ff;
+  --muted: #97a8c3;
+  --line: rgba(173, 191, 219, 0.16);
+  --primary: #49c6b4;
+  --primary-dark: #b8fff1;
+  --secondary: #ffb35c;
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+  --theme-elevated: rgba(18, 27, 43, 0.86);
+  --theme-sidebar: rgba(9, 16, 29, 0.96);
 }
 
 * {
@@ -44,9 +44,9 @@ body {
 
 :root[data-theme="night"] body {
   background:
-    radial-gradient(circle at top left, rgba(244, 180, 111, 0.12), transparent 24%),
-    radial-gradient(circle at bottom right, rgba(118, 212, 155, 0.16), transparent 28%),
-    linear-gradient(135deg, #071019 0%, #172431 54%, #21313b 100%);
+    radial-gradient(circle at top left, rgba(73, 198, 180, 0.16), transparent 24%),
+    radial-gradient(circle at top right, rgba(255, 179, 92, 0.14), transparent 20%),
+    linear-gradient(145deg, #08111e 0%, #101a2c 45%, #132239 100%);
 }
 
 a {
@@ -187,8 +187,8 @@ a {
 
 :root[data-theme="night"] .authCard {
   background:
-    radial-gradient(circle at top right, rgba(244, 180, 111, 0.1), transparent 34%),
-    linear-gradient(160deg, rgba(18, 29, 39, 0.96), rgba(10, 18, 27, 0.9));
+    radial-gradient(circle at top right, rgba(255, 179, 92, 0.1), transparent 34%),
+    linear-gradient(160deg, rgba(18, 28, 43, 0.96), rgba(10, 17, 29, 0.92));
   border-color: rgba(231, 239, 232, 0.08);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
 }
@@ -1013,6 +1013,11 @@ a {
   background: rgba(237, 243, 244, 0.95);
 }
 
+:root[data-theme="night"] .thingSketchFiles {
+  border-color: rgba(173, 191, 219, 0.12);
+  background: rgba(10, 16, 28, 0.96);
+}
+
 .thingSketchTabs {
   display: flex;
   align-items: center;
@@ -1021,6 +1026,11 @@ a {
   background: rgba(219, 230, 232, 0.95);
   border-bottom: 1px solid rgba(31, 42, 31, 0.08);
   overflow-x: auto;
+}
+
+:root[data-theme="night"] .thingSketchTabs {
+  background: rgba(17, 26, 42, 0.98);
+  border-bottom-color: rgba(173, 191, 219, 0.1);
 }
 
 .thingSketchTab {
@@ -1039,17 +1049,57 @@ a {
   border-right: 1px solid rgba(31, 42, 31, 0.08);
 }
 
+:root[data-theme="night"] .thingSketchTabActive {
+  background: rgba(10, 16, 28, 0.98);
+  border-left-color: rgba(173, 191, 219, 0.12);
+  border-right-color: rgba(173, 191, 219, 0.12);
+}
+
+.thingSketchViewer {
+  display: grid;
+}
+
+.thingSketchToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(31, 42, 31, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.thingSketchToolbarCopy {
+  display: grid;
+  gap: 4px;
+}
+
+.thingSketchToolbarCopy span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+:root[data-theme="night"] .thingSketchToolbar {
+  background: rgba(20, 31, 50, 0.94);
+  border-bottom-color: rgba(173, 191, 219, 0.1);
+}
+
 .thingSketchCode {
   margin: 0;
   min-height: 420px;
   padding: 24px;
   overflow: auto;
   background: white;
-  color: #61717b;
+  color: #435461;
   font-size: 1.05rem;
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+:root[data-theme="night"] .thingSketchCode {
+  background: linear-gradient(180deg, rgba(8, 14, 24, 0.98), rgba(13, 21, 34, 0.98));
+  color: #d9e6ff;
 }
 
 .thingRowLink {
@@ -2814,6 +2864,12 @@ a {
   border: 1px solid rgba(47, 107, 59, 0.18);
 }
 
+:root[data-theme="night"] .buttonGhost {
+  background: rgba(73, 198, 180, 0.08);
+  border-color: rgba(73, 198, 180, 0.2);
+  color: var(--primary-dark);
+}
+
 .buttonDanger {
   background: #8a2f24;
   color: white;
@@ -3020,5 +3076,10 @@ a {
 
   .registerForm {
     grid-template-columns: 1fr;
+  }
+
+  .thingSketchToolbar {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

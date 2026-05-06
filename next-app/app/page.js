@@ -7,6 +7,7 @@ import DashboardSwitchTileButton from "./DashboardSwitchTileButton";
 import DashboardWidgetModal from "./DashboardWidgetModal";
 import DeviceSetupModal from "./DeviceSetupModal";
 import LedToggleButton from "./LedToggleButton";
+import ThingSketchViewer from "./ThingSketchViewer";
 import {
   addThingVariableForUser,
   addDashboardTileForUser,
@@ -327,6 +328,12 @@ function isAnalogPinLabel(value) {
   return /^A\d+$/i.test(String(value || "").trim());
 }
 
+function escapeCString(value) {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+}
+
 function buildThingSketchFiles(thing, origin) {
   const variables = buildUniqueThingVariables((Array.isArray(thing.variables) ? thing.variables : []).map((variable) => ({
     ...variable,
@@ -347,117 +354,299 @@ function buildThingSketchFiles(thing, origin) {
     // Use localhost fallback.
   }
 
+  const booleanVariables = variables.filter((variable) => normalizeVariableType(variable.type) === "boolean");
+  const intVariables = variables.filter((variable) => normalizeVariableType(variable.type) === "int");
+  const stringVariables = variables.filter((variable) => normalizeVariableType(variable.type) === "string");
+
   const pinConstants = variables.length
     ? variables.map((variable) => `const int ${variable.pinConstantName} = ${variable.pinLabelValue};`).join("\n")
-    : "const int STATUS_LED_PIN = 13;";
+    : "const int LED_PIN = 13;\nconst int POTENTIOMETER_PIN = A5;";
 
-  const setupLines = variables.length
-    ? variables
-        .flatMap((variable) => {
-          if (normalizeVariableType(variable.type) === "boolean") {
-            return [
-              `  pinMode(${variable.pinConstantName}, OUTPUT);`,
-              `  digitalWrite(${variable.pinConstantName}, ${variable.codeName} ? HIGH : LOW);`
-            ];
-          }
+  const stateDeclarations = [
+    ...booleanVariables.map((variable) => `bool ${variable.codeName}State = false;`),
+    ...intVariables.map((variable) => `int ${variable.codeName}Value = -1;`),
+    ...stringVariables.map((variable) => `String ${variable.codeName}Value = "";`)
+  ].join("\n");
 
-          if (normalizeVariableType(variable.type) === "int") {
-            return [`  pinMode(${variable.pinConstantName}, INPUT);`];
-          }
+  const setupLines = [
+    ...(booleanVariables.length
+      ? booleanVariables.flatMap((variable) => [
+          `  pinMode(${variable.pinConstantName}, OUTPUT);`,
+          `  digitalWrite(${variable.pinConstantName}, LOW);`
+        ])
+      : ["  pinMode(LED_PIN, OUTPUT);", "  digitalWrite(LED_PIN, LOW);"]),
+    ...(intVariables.length
+      ? intVariables.map((variable) =>
+          isAnalogPinLabel(variable.pinLabelValue)
+            ? `  pinMode(${variable.pinConstantName}, INPUT);`
+            : `  pinMode(${variable.pinConstantName}, INPUT_PULLUP);`
+        )
+      : ["  pinMode(POTENTIOMETER_PIN, INPUT);"])
+  ].join("\n");
 
-          return [];
-        })
-        .join("\n")
-    : "  pinMode(STATUS_LED_PIN, OUTPUT);\n  digitalWrite(STATUS_LED_PIN, LOW);";
-
-  const inputSyncLines = variables
-    .filter((variable) => normalizeVariableType(variable.type) === "int" && isAnalogPinLabel(variable.pinLabelValue))
-    .map(
-      (variable) => `  const int next${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)} = analogRead(${variable.pinConstantName});
-  if (next${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)} != ${variable.codeName}) {
-    ${variable.codeName} = next${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)};
-  }`
-    )
-    .join("\n\n");
-
-  const callbackBlocks = variables.length
-    ? variables
+  const analogSampling = intVariables.length
+    ? intVariables
         .map((variable) => {
-          if (normalizeVariableType(variable.type) === "boolean") {
-            return `void ${variable.callbackName}() {
-  digitalWrite(${variable.pinConstantName}, ${variable.codeName} ? HIGH : LOW);
-  Serial.println("${variable.name} updated");
-}`;
-          }
+          const reader = isAnalogPinLabel(variable.pinLabelValue)
+            ? `analogRead(${variable.pinConstantName})`
+            : `digitalRead(${variable.pinConstantName})`;
 
-          if (normalizeVariableType(variable.type) === "int") {
-            const writeLine = isAnalogPinLabel(variable.pinLabelValue)
-              ? ""
-              : `  analogWrite(${variable.pinConstantName}, constrain(${variable.codeName}, 0, 255));\n`;
-
-            return `void ${variable.callbackName}() {
-${writeLine}  Serial.print("${variable.name}: ");
-  Serial.println(${variable.codeName});
-}`;
-          }
-
-          return `void ${variable.callbackName}() {
-  Serial.print("${variable.name}: ");
-  Serial.println(${variable.codeName});
-}`;
+          return `  const int next${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)} = ${reader};
+  if (${variable.codeName}Value < 0 || abs(next${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)} - ${variable.codeName}Value) >= SENSOR_REPORT_DELTA) {
+    ${variable.codeName}Value = next${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)};
+    changed = true;
+  }`;
         })
         .join("\n\n")
-    : `void onStatusLedChange() {
-  digitalWrite(STATUS_LED_PIN, HIGH);
-}`;
+    : `  const int nextDisplayVal = analogRead(POTENTIOMETER_PIN);
+  if (displayValValue < 0 || abs(nextDisplayVal - displayValValue) >= SENSOR_REPORT_DELTA) {
+    displayValValue = nextDisplayVal;
+    changed = true;
+  }`;
 
-  const ino = `#include "thingProperties.h"
+  const variableJsonLines = variables.length
+    ? variables
+        .map((variable, index) => {
+          const prefix = index === 0 ? "" : '  body += ",";\n';
+          const type = normalizeVariableType(variable.type);
+
+          if (type === "boolean") {
+            return `${prefix}  body += "\\\"${escapeCString(variable.name)}\\\":";
+  body += ${variable.codeName}State ? "true" : "false";`;
+          }
+
+          if (type === "string") {
+            return `${prefix}  body += "\\\"${escapeCString(variable.name)}\\\":\\\"";
+  body += ${variable.codeName}Value;
+  body += "\\\"";`;
+          }
+
+          return `${prefix}  body += "\\\"${escapeCString(variable.name)}\\\":";
+  body += String(${variable.codeName}Value);`;
+        })
+        .join("\n")
+    : '  body += "\\"display_val\\":";\n  body += String(displayValValue);';
+
+  const analogPinsJsonLines = intVariables.filter((variable) => isAnalogPinLabel(variable.pinLabelValue)).length
+    ? intVariables
+        .filter((variable) => isAnalogPinLabel(variable.pinLabelValue))
+        .map((variable, index) => {
+          const prefix = index === 0 ? "" : '  body += ",";\n';
+          return `${prefix}  body += "\\\"${escapeCString(variable.pinLabelValue)}\\\":";
+  body += String(${variable.codeName}Value);`;
+        })
+        .join("\n")
+    : '  body += "\\"A5\\":";\n  body += String(displayValValue);';
+
+  const ledApplyLines = booleanVariables.length
+    ? booleanVariables
+        .map(
+          (variable) => `  ${variable.codeName}State = nextState;
+  digitalWrite(${variable.pinConstantName}, nextState ? HIGH : LOW);`
+        )
+        .join("\n")
+    : `  digitalWrite(LED_PIN, nextState ? HIGH : LOW);`;
+
+  const bootStateDeclarations = variables.length ? stateDeclarations : "int displayValValue = -1;";
+
+  const firstReadableValueName = intVariables[0]?.name || "display_val";
+
+  const ino = `#include <WiFiS3.h>
+#include <PubSubClient.h>
+
+const char* WIFI_SSID = "YOUR_WIFI_NAME";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+
+const char* MQTT_HOST = "${host}";
+const int MQTT_PORT = 1883;
+
+const char* CLOUD_HOST = "${host}";
+const int CLOUD_PORT = ${String(origin || "").startsWith("https://") ? 443 : 3000};
+const bool CLOUD_USE_SSL = ${String(origin || "").startsWith("https://") ? "true" : "false"};
+
+const char* DEVICE_ID = "${thing.device_id || "replace-with-device-id"}";
+const char* DEVICE_SECRET = "${thing.device_id ? "replace-with-device-secret" : ""}";
 
 ${pinConstants}
+const unsigned long HEARTBEAT_INTERVAL_MS = 20000;
+const unsigned long SENSOR_REPORT_INTERVAL_MS = 750;
+const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
+const int SENSOR_REPORT_DELTA = 8;
 
-void syncInputVariables();
+WiFiClient mqttWifiClient;
+PubSubClient mqttClient(mqttWifiClient);
+
+unsigned long lastHeartbeatAt = 0;
+unsigned long lastMqttRetryAt = 0;
+unsigned long lastSensorReportAt = 0;
+String currentLedState = "OFF";
+${bootStateDeclarations}
+
+String commandTopic = String("farm1/") + DEVICE_ID + "/cmd";
+String statusTopic = String("farm1/") + DEVICE_ID + "/status";
+
+String readHttpResponse(Client& client) {
+  String response;
+  const unsigned long startedAt = millis();
+
+  while (millis() - startedAt < 5000) {
+    while (client.available()) {
+      response += static_cast<char>(client.read());
+    }
+
+    if (!client.connected()) {
+      break;
+    }
+  }
+
+  return response;
+}
+
+void publishStatus(const char* status) {
+  if (!mqttClient.connected()) {
+    return;
+  }
+
+  mqttClient.publish(statusTopic.c_str(), status, true);
+}
+
+void applyBooleanOutputs(bool nextState) {
+${ledApplyLines}
+  currentLedState = nextState ? "ON" : "OFF";
+  publishStatus(currentLedState.c_str());
+}
+
+void applyLedCommand(const String& command) {
+  if (command == "ON") {
+    applyBooleanOutputs(true);
+  } else if (command == "OFF") {
+    applyBooleanOutputs(false);
+  }
+}
+
+void onMqttMessage(char* topic, byte* payload, unsigned int length) {
+  String message;
+
+  for (unsigned int index = 0; index < length; index++) {
+    message += static_cast<char>(payload[index]);
+  }
+
+  message.trim();
+  applyLedCommand(message);
+}
+
+bool captureSensorValues() {
+  bool changed = false;
+
+${analogSampling}
+
+  return changed;
+}
+
+String buildHeartbeatBody(const char* status) {
+  String body = String("{\\"deviceSecret\\":\\"") + DEVICE_SECRET + "\\",\\"status\\":\\"" + status + "\\",\\"analogPins\\":{";
+${analogPinsJsonLines}
+  body += "},\\"variables\\":{";
+${variableJsonLines}
+  body += "}}";
+  return body;
+}
+
+void sendHeartbeat(const char* status) {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  WiFiClient plainClient;
+  WiFiSSLClient sslClient;
+  Client& client = CLOUD_USE_SSL ? static_cast<Client&>(sslClient) : static_cast<Client&>(plainClient);
+
+  if (!client.connect(CLOUD_HOST, CLOUD_PORT)) {
+    return;
+  }
+
+  const String path = String("/api/devices/") + DEVICE_ID + "/heartbeat";
+  const String body = buildHeartbeatBody(status);
+
+  client.print(String("POST ") + path + " HTTP/1.1\\r\\n");
+  client.print(String("Host: ") + CLOUD_HOST + ":" + String(CLOUD_PORT) + "\\r\\n");
+  client.print("Content-Type: application/json\\r\\n");
+  client.print(String("Content-Length: ") + String(body.length()) + "\\r\\n");
+  client.print("Connection: close\\r\\n\\r\\n");
+  client.print(body);
+
+  readHttpResponse(client);
+  client.stop();
+  lastHeartbeatAt = millis();
+}
+
+bool connectWifi() {
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  const unsigned long startedAt = millis();
+
+  while (WiFi.status() != WL_CONNECTED && millis() - startedAt < 30000) {
+    delay(500);
+  }
+
+  return WiFi.status() == WL_CONNECTED;
+}
+
+void connectMqtt() {
+  if (WiFi.status() != WL_CONNECTED || mqttClient.connected()) {
+    return;
+  }
+
+  if (millis() - lastMqttRetryAt < MQTT_RETRY_INTERVAL_MS) {
+    return;
+  }
+  lastMqttRetryAt = millis();
+
+  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+  mqttClient.setCallback(onMqttMessage);
+
+  if (mqttClient.connect(DEVICE_ID, DEVICE_ID, DEVICE_SECRET)) {
+    mqttClient.subscribe(commandTopic.c_str());
+    publishStatus("READY");
+    sendHeartbeat("online");
+  }
+}
 
 void setup() {
   Serial.begin(115200);
-  delay(1500);
+  delay(1000);
 ${setupLines}
 
-  initProperties();
-  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
-
-  setDebugMessageLevel(2);
-  ArduinoCloud.printDebugInfo();
+  if (connectWifi()) {
+    connectMqtt();
+    captureSensorValues();
+  }
 }
 
 void loop() {
-  ArduinoCloud.update();
-  syncInputVariables();
-}
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWifi();
+  }
 
-void syncInputVariables() {
-${inputSyncLines || "  // Add analog sensor reads here if you link Int variables to A0-A5 pins."}
-}
+  if (WiFi.status() == WL_CONNECTED && !mqttClient.connected()) {
+    connectMqtt();
+  }
 
-${callbackBlocks}`;
+  if (mqttClient.connected()) {
+    mqttClient.loop();
+  }
 
-  const propertiesLines = variables.length
-    ? variables
-        .map((variable) => `${variable.typeConfig.declaration} ${variable.codeName} = ${variable.typeConfig.defaultValue};
+  if (WiFi.status() == WL_CONNECTED && millis() - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
+    sendHeartbeat("online");
+  }
 
-void ${variable.callbackName}();`)
-        .join("\n\n")
-    : `bool statusLed = false;
+  const bool sensorReportDue = millis() - lastSensorReportAt >= SENSOR_REPORT_INTERVAL_MS;
+  const bool sensorChangedEnough = captureSensorValues();
 
-void onStatusLedChange();`;
-
-  const propertyRegistrations = (variables.length
-    ? variables
-    : [{ codeName: "statusLed", callbackName: "onStatusLedChange", permissionToken: "READWRITE" }])
-    .map(
-      (variable) =>
-        `  ArduinoCloud.addProperty(${variable.codeName}, ${variable.permissionToken}, ON_CHANGE, ${variable.callbackName});`
-    )
-    .join("\n");
+  if (WiFi.status() == WL_CONNECTED && sensorReportDue && sensorChangedEnough) {
+    lastSensorReportAt = millis();
+    sendHeartbeat("online");
+  }
+}`;
 
   const widgetSummary = widgets.length
     ? widgets
@@ -468,23 +657,25 @@ void onStatusLedChange();`;
         .join("\n")
     : "No dashboard widgets linked to this Thing yet.";
 
-  const thingProperties = `#include <ArduinoIoTCloud.h>
-#include <Arduino_ConnectionHandler.h>
+  const configHeader = `#pragma once
 
-const char DEVICE_LOGIN_NAME[]  = "${thing.device_id || ""}";
-const char DEVICE_KEY[]         = "${thing.device_id || ""}";
-const char DEVICE_SECRET[]      = "${thing.device_id ? "set-in-dashboard" : ""}";
+// Generated for Thing: ${thing.thing_name}
+// Device: ${thing.device_name || "Not linked yet"}
+// Primary value variable: ${firstReadableValueName}
 
-const char SSID[]               = "YOUR_WIFI_NAME";
-const char PASS[]               = "YOUR_WIFI_PASSWORD";
+const char* GENERATED_DEVICE_ID = "${thing.device_id || "replace-with-device-id"}";
+const char* GENERATED_DEVICE_SECRET = "${thing.device_id ? "replace-with-device-secret" : ""}";
 
-${propertiesLines}
-
-WiFiConnectionHandler ArduinoIoTPreferredConnection(SSID, PASS);
-
-void initProperties() {
-${propertyRegistrations}
-}
+${variables.length
+    ? variables
+        .map(
+          (variable) =>
+            `// ${variable.name} | ${formatVariableTypeLabel(variable.type)} | pin ${variable.pinLabelValue} | widgets: ${
+              widgets.filter((widget) => widget.variable_name === variable.name).length
+            }`
+        )
+        .join("\n")
+    : "// No Thing variables yet. Add a switch or sensor variable in the Things page."}
 `;
 
   const readme = `Thing: ${thing.thing_name}
@@ -494,10 +685,10 @@ Variables: ${variables.length}
 Widgets: ${widgets.length}
 
 How to use:
-1. Copy the generated files into the Arduino IDE project.
-2. Replace Wi-Fi credentials in thingProperties.h.
-3. Set the device secret from the Devices page.
-4. Upload to your Arduino UNO R4 WiFi.
+1. Open Arduino IDE and create or open a sketch folder.
+2. Copy the generated `.ino` file and paste it into the main Arduino sketch tab.
+3. Replace Wi-Fi credentials and device secret in the generated code.
+4. Upload from Arduino IDE to your UNO R4 WiFi.
 5. Open the dashboard and verify each linked widget updates the matching variable.
 
 Linked widgets:
@@ -516,7 +707,7 @@ ${widgetSummary}
 
   return [
     { id: "ino", label: `${thing.thing_name || "thing"}.ino`, content: ino },
-    { id: "properties", label: "thingProperties.h", content: thingProperties },
+    { id: "config", label: "generated-config.h", content: configHeader },
     { id: "widgets", label: "dashboardWidgets.json", content: widgetsFile },
     { id: "readme", label: "README.txt", content: readme }
   ];
@@ -1633,9 +1824,7 @@ export default async function HomePage({ searchParams }) {
                                 </div>
 
                                 {activeThingSketchFile ? (
-                                  <pre className="thingSketchCode">
-                                    <code>{activeThingSketchFile.content}</code>
-                                  </pre>
+                                  <ThingSketchViewer file={activeThingSketchFile} />
                                 ) : (
                                   <div className="historyCard">
                                     <strong>No sketch files yet</strong>
