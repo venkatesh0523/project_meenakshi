@@ -712,7 +712,7 @@ Widgets: ${widgets.length}
 
 How to use:
 1. Open Arduino IDE and create or open a sketch folder.
-2. Copy the generated `.ino` file and paste it into the main Arduino sketch tab.
+2. Copy the generated .ino file and paste it into the main Arduino sketch tab.
 3. Replace Wi-Fi credentials and device secret in the generated code.
 4. Upload from Arduino IDE to your UNO R4 WiFi.
 5. Open the dashboard and verify each linked widget updates the matching variable.
@@ -732,7 +732,7 @@ ${widgetSummary}
   );
 
   return [
-    { id: "ino", label: `${thing.thing_name || "thing"}.ino`, content: ino },
+    { id: "ino", label: `${safeText(thing.thing_name, "thing")}.ino`, content: ino },
     { id: "config", label: "generated-config.h", content: configHeader },
     { id: "widgets", label: "dashboardWidgets.json", content: widgetsFile },
     { id: "readme", label: "README.txt", content: readme }
