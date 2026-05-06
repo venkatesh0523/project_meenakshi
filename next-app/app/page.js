@@ -1991,6 +1991,12 @@ export default async function HomePage({ searchParams }) {
                                         <a className="button buttonGhost" href={buildThingPageLink(thing.thing_id)}>
                                           Edit Variables
                                         </a>
+                                        <a
+                                          className="button buttonOn"
+                                          href={buildThingPageLink(thing.thing_id, "sketch")}
+                                        >
+                                          Open Sketch
+                                        </a>
                                       </div>
 
                                       <div className="builderPillRow">

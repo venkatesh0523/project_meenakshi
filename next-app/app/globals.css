@@ -193,6 +193,90 @@ a {
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
 }
 
+:root[data-theme="night"] .builderStat,
+:root[data-theme="night"] .thingRowCell,
+:root[data-theme="night"] .thingCloudPanel,
+:root[data-theme="night"] .historyCard,
+:root[data-theme="night"] .topicItem,
+:root[data-theme="night"] .dashboardCanvasToolbar {
+  background: rgba(18, 28, 43, 0.92);
+  border-color: rgba(173, 191, 219, 0.14);
+}
+
+:root[data-theme="night"] .thingCloudTabs,
+:root[data-theme="night"] .thingCloudTableHead,
+:root[data-theme="night"] .thingCloudCreatePanel {
+  background: rgba(22, 34, 52, 0.96);
+  border-color: rgba(173, 191, 219, 0.14);
+}
+
+:root[data-theme="night"] .thingCloudTab {
+  color: #b4c6e6;
+}
+
+:root[data-theme="night"] .thingCloudTabActive {
+  background: rgba(10, 18, 30, 0.98);
+  color: #6ee7d8;
+  box-shadow: none;
+}
+
+:root[data-theme="night"] .thingRowCell strong,
+:root[data-theme="night"] .thingCloudPanel strong,
+:root[data-theme="night"] .historyCard strong,
+:root[data-theme="night"] .builderHeader strong,
+:root[data-theme="night"] .builderStat strong {
+  color: #edf4ff;
+}
+
+:root[data-theme="night"] .builderStat span,
+:root[data-theme="night"] .thingRowCell span,
+:root[data-theme="night"] .sectionCopy,
+:root[data-theme="night"] .thingSketchToolbarCopy span,
+:root[data-theme="night"] .authCopy,
+:root[data-theme="night"] .builderSidebarProfileText span {
+  color: #97a8c3;
+}
+
+:root[data-theme="night"] .input,
+:root[data-theme="night"] select.input,
+:root[data-theme="night"] textarea.input {
+  background: rgba(10, 18, 30, 0.98);
+  border-color: rgba(173, 191, 219, 0.16);
+  color: #edf4ff;
+}
+
+:root[data-theme="night"] .input::placeholder {
+  color: #7085a8;
+}
+
+:root[data-theme="night"] .builderMiniPill {
+  background: rgba(73, 198, 180, 0.1);
+  border-color: rgba(73, 198, 180, 0.18);
+  color: #c8fff5;
+}
+
+:root[data-theme="night"] .builderNavItem,
+:root[data-theme="night"] .thingRowLink,
+:root[data-theme="night"] .dashboardBreadcrumbs a,
+:root[data-theme="night"] .thingCloudBreadcrumbs a {
+  color: #c9d8ef;
+}
+
+:root[data-theme="night"] .builderNavItemActive {
+  background: linear-gradient(135deg, rgba(73, 198, 180, 0.34), rgba(101, 222, 194, 0.24));
+  color: #dffff8;
+}
+
+:root[data-theme="night"] .buttonOn {
+  background: linear-gradient(135deg, #1fb6aa, #49c6b4);
+  color: #08111e;
+}
+
+:root[data-theme="night"] .buttonDanger {
+  background: #742f37;
+  color: #fff3f4;
+}
+
 .authCardFeatured {
   justify-self: center;
   width: 100%;
