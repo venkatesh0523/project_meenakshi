@@ -469,7 +469,39 @@ async function getThingForUser(thingId, userId) {
     [thingId, userId]
   );
 
-  return result.rows[0] || null;
+  const thing = result.rows[0] || null;
+
+  if (!thing) {
+    return null;
+  }
+
+  const widgetsResult = await db.query(
+    `
+      SELECT
+        dashboard_tiles.id,
+        dashboard_tiles.tile_name,
+        dashboard_tiles.tile_type,
+        dashboard_tiles.sort_order,
+        dashboards.id AS dashboard_id,
+        dashboards.dashboard_name,
+        thing_variables.variable_name,
+        thing_variables.variable_type
+      FROM dashboard_tiles
+      JOIN dashboards
+        ON dashboards.id = dashboard_tiles.dashboard_id
+      LEFT JOIN thing_variables
+        ON thing_variables.id = dashboard_tiles.linked_variable_id
+      WHERE dashboard_tiles.linked_thing_id = $1
+        AND dashboards.owner_user_id = $2
+      ORDER BY dashboards.dashboard_name ASC, dashboard_tiles.sort_order ASC, dashboard_tiles.created_at ASC
+    `,
+    [thingId, userId]
+  );
+
+  return {
+    ...thing,
+    widgets: widgetsResult.rows
+  };
 }
 
 async function listDashboards(userId) {

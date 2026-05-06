@@ -1,4 +1,5 @@
 import "./globals.css";
+import ThemeToggle from "./ThemeToggle";
 
 export const metadata = {
   title: "Farm LED Control",
@@ -8,7 +9,10 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ThemeToggle />
+        {children}
+      </body>
     </html>
   );
 }

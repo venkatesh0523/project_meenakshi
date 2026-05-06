@@ -252,12 +252,93 @@ function buildThingVariableIdentifier(name, fallbackIndex = 1) {
   return /^[a-zA-Z_]/.test(normalized) ? normalized : `switch_${fallbackIndex}_${normalized}`;
 }
 
+function buildUniqueThingVariables(variables) {
+  const usedNames = new Set();
+
+  return (Array.isArray(variables) ? variables : []).map((variable, index) => {
+    const baseName = buildThingVariableIdentifier(variable.name, index + 1);
+    let codeName = baseName;
+    let suffix = 2;
+
+    while (usedNames.has(codeName)) {
+      codeName = `${baseName}_${suffix}`;
+      suffix += 1;
+    }
+
+    usedNames.add(codeName);
+
+    return {
+      ...variable,
+      codeName
+    };
+  });
+}
+
+function buildThingCallbackName(codeName) {
+  return `on${codeName.charAt(0).toUpperCase()}${codeName.slice(1)}Change`;
+}
+
+function buildThingPinConstantName(codeName) {
+  return `${codeName.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase()}_PIN`;
+}
+
+function formatThingPermission(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+
+  if (normalized === "read") {
+    return "READ";
+  }
+
+  if (normalized === "write") {
+    return "WRITE";
+  }
+
+  return "READWRITE";
+}
+
+function getThingVariableTypeConfig(variableType) {
+  const normalizedType = normalizeVariableType(variableType);
+
+  if (normalizedType === "int") {
+    return {
+      declaration: "int",
+      defaultValue: "0"
+    };
+  }
+
+  if (normalizedType === "string") {
+    return {
+      declaration: "String",
+      defaultValue: '""'
+    };
+  }
+
+  return {
+    declaration: "bool",
+    defaultValue: "false"
+  };
+}
+
+function getThingPinLabel(variable) {
+  return String(variable?.pinLabel || variable?.pinNumber || "").trim() || "13";
+}
+
+function isAnalogPinLabel(value) {
+  return /^A\d+$/i.test(String(value || "").trim());
+}
+
 function buildThingSketchFiles(thing, origin) {
-  const variables = (Array.isArray(thing.variables) ? thing.variables : []).map((variable, index) => ({
+  const variables = buildUniqueThingVariables((Array.isArray(thing.variables) ? thing.variables : []).map((variable) => ({
     ...variable,
-    codeName: buildThingVariableIdentifier(variable.name, index + 1)
+    typeConfig: getThingVariableTypeConfig(variable.type)
+  }))).map((variable) => ({
+    ...variable,
+    callbackName: buildThingCallbackName(variable.codeName),
+    pinLabelValue: getThingPinLabel(variable),
+    pinConstantName: buildThingPinConstantName(variable.codeName),
+    permissionToken: formatThingPermission(variable.permission)
   }));
-  const primaryVariable = variables[0]?.codeName || "switch_1";
+  const widgets = Array.isArray(thing.widgets) ? thing.widgets : [];
 
   let host = "localhost";
   try {
@@ -266,15 +347,80 @@ function buildThingSketchFiles(thing, origin) {
     // Use localhost fallback.
   }
 
+  const pinConstants = variables.length
+    ? variables.map((variable) => `const int ${variable.pinConstantName} = ${variable.pinLabelValue};`).join("\n")
+    : "const int STATUS_LED_PIN = 13;";
+
+  const setupLines = variables.length
+    ? variables
+        .flatMap((variable) => {
+          if (normalizeVariableType(variable.type) === "boolean") {
+            return [
+              `  pinMode(${variable.pinConstantName}, OUTPUT);`,
+              `  digitalWrite(${variable.pinConstantName}, ${variable.codeName} ? HIGH : LOW);`
+            ];
+          }
+
+          if (normalizeVariableType(variable.type) === "int") {
+            return [`  pinMode(${variable.pinConstantName}, INPUT);`];
+          }
+
+          return [];
+        })
+        .join("\n")
+    : "  pinMode(STATUS_LED_PIN, OUTPUT);\n  digitalWrite(STATUS_LED_PIN, LOW);";
+
+  const inputSyncLines = variables
+    .filter((variable) => normalizeVariableType(variable.type) === "int" && isAnalogPinLabel(variable.pinLabelValue))
+    .map(
+      (variable) => `  const int next${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)} = analogRead(${variable.pinConstantName});
+  if (next${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)} != ${variable.codeName}) {
+    ${variable.codeName} = next${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)};
+  }`
+    )
+    .join("\n\n");
+
+  const callbackBlocks = variables.length
+    ? variables
+        .map((variable) => {
+          if (normalizeVariableType(variable.type) === "boolean") {
+            return `void ${variable.callbackName}() {
+  digitalWrite(${variable.pinConstantName}, ${variable.codeName} ? HIGH : LOW);
+  Serial.println("${variable.name} updated");
+}`;
+          }
+
+          if (normalizeVariableType(variable.type) === "int") {
+            const writeLine = isAnalogPinLabel(variable.pinLabelValue)
+              ? ""
+              : `  analogWrite(${variable.pinConstantName}, constrain(${variable.codeName}, 0, 255));\n`;
+
+            return `void ${variable.callbackName}() {
+${writeLine}  Serial.print("${variable.name}: ");
+  Serial.println(${variable.codeName});
+}`;
+          }
+
+          return `void ${variable.callbackName}() {
+  Serial.print("${variable.name}: ");
+  Serial.println(${variable.codeName});
+}`;
+        })
+        .join("\n\n")
+    : `void onStatusLedChange() {
+  digitalWrite(STATUS_LED_PIN, HIGH);
+}`;
+
   const ino = `#include "thingProperties.h"
 
-const int LED_PIN = 13;
+${pinConstants}
+
+void syncInputVariables();
 
 void setup() {
   Serial.begin(115200);
   delay(1500);
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
+${setupLines}
 
   initProperties();
   ArduinoCloud.begin(ArduinoIoTPreferredConnection);
@@ -285,31 +431,42 @@ void setup() {
 
 void loop() {
   ArduinoCloud.update();
+  syncInputVariables();
 }
 
-void on${primaryVariable.charAt(0).toUpperCase()}${primaryVariable.slice(1)}Change() {
-  digitalWrite(LED_PIN, ${primaryVariable} ? HIGH : LOW);
-}`;
+void syncInputVariables() {
+${inputSyncLines || "  // Add analog sensor reads here if you link Int variables to A0-A5 pins."}
+}
+
+${callbackBlocks}`;
 
   const propertiesLines = variables.length
     ? variables
-        .map(
-          (variable) =>
-            `bool ${variable.codeName};
+        .map((variable) => `${variable.typeConfig.declaration} ${variable.codeName} = ${variable.typeConfig.defaultValue};
 
-void on${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)}Change();`
-        )
+void ${variable.callbackName}();`)
         .join("\n\n")
-    : `bool ${primaryVariable};
+    : `bool statusLed = false;
 
-void on${primaryVariable.charAt(0).toUpperCase()}${primaryVariable.slice(1)}Change();`;
+void onStatusLedChange();`;
 
-  const propertyRegistrations = (variables.length ? variables : [{ codeName: primaryVariable }])
+  const propertyRegistrations = (variables.length
+    ? variables
+    : [{ codeName: "statusLed", callbackName: "onStatusLedChange", permissionToken: "READWRITE" }])
     .map(
       (variable) =>
-        `  ArduinoCloud.addProperty(${variable.codeName}, READWRITE, ON_CHANGE, on${variable.codeName.charAt(0).toUpperCase()}${variable.codeName.slice(1)}Change);`
+        `  ArduinoCloud.addProperty(${variable.codeName}, ${variable.permissionToken}, ON_CHANGE, ${variable.callbackName});`
     )
     .join("\n");
+
+  const widgetSummary = widgets.length
+    ? widgets
+        .map(
+          (widget) =>
+            `- ${widget.dashboard_name}: ${widget.tile_name} (${String(widget.tile_type || "").replace(/_/g, " ")})${widget.variable_name ? ` -> ${widget.variable_name}` : ""}`
+        )
+        .join("\n")
+    : "No dashboard widgets linked to this Thing yet.";
 
   const thingProperties = `#include <ArduinoIoTCloud.h>
 #include <Arduino_ConnectionHandler.h>
@@ -318,7 +475,7 @@ const char DEVICE_LOGIN_NAME[]  = "${thing.device_id || ""}";
 const char DEVICE_KEY[]         = "${thing.device_id || ""}";
 const char DEVICE_SECRET[]      = "${thing.device_id ? "set-in-dashboard" : ""}";
 
-const char SSID[]               = "${thing.device_name || ""}";
+const char SSID[]               = "YOUR_WIFI_NAME";
 const char PASS[]               = "YOUR_WIFI_PASSWORD";
 
 ${propertiesLines}
@@ -333,17 +490,34 @@ ${propertyRegistrations}
   const readme = `Thing: ${thing.thing_name}
 Device: ${thing.device_name || "Not linked yet"}
 Cloud host: ${host}
+Variables: ${variables.length}
+Widgets: ${widgets.length}
 
 How to use:
-1. Copy the generated sketch into the Arduino IDE.
-2. Replace Wi-Fi password in thingProperties.h.
-3. Use the device credentials shown on the Devices page.
+1. Copy the generated files into the Arduino IDE project.
+2. Replace Wi-Fi credentials in thingProperties.h.
+3. Set the device secret from the Devices page.
 4. Upload to your Arduino UNO R4 WiFi.
+5. Open the dashboard and verify each linked widget updates the matching variable.
+
+Linked widgets:
+${widgetSummary}
 `;
+
+  const widgetsFile = JSON.stringify(
+    {
+      thing: thing.thing_name || "",
+      widgetCount: widgets.length,
+      widgets
+    },
+    null,
+    2
+  );
 
   return [
     { id: "ino", label: `${thing.thing_name || "thing"}.ino`, content: ino },
     { id: "properties", label: "thingProperties.h", content: thingProperties },
+    { id: "widgets", label: "dashboardWidgets.json", content: widgetsFile },
     { id: "readme", label: "README.txt", content: readme }
   ];
 }
@@ -351,9 +525,7 @@ How to use:
 const builderSections = [
   { id: "things", label: "Things" },
   { id: "devices", label: "Devices" },
-  { id: "dashboards", label: "Dashboards" },
-  { id: "triggers", label: "Triggers" },
-  { id: "templates", label: "Templates" }
+  { id: "dashboards", label: "Dashboards" }
 ];
 
 const builderSidebarGroups = [
@@ -1442,7 +1614,7 @@ export default async function HomePage({ searchParams }) {
                                 <div>
                                   <strong>Sketch</strong>
                                   <p className="sectionCopy">
-                                    Generated switch-only sketch files for <code>{selectedThing.device_sketch || "uno_r4_wifi_cloud_device"}</code>.
+                                    Generated sketch files for <code>{selectedThing.device_sketch || "uno_r4_wifi_cloud_device"}</code> using {selectedThing.variables?.length || 0} variables and {selectedThing.widgets?.length || 0} linked widgets. The files refresh automatically when you add variables or dashboard widgets.
                                   </p>
                                 </div>
                               </div>
@@ -1958,69 +2130,7 @@ export default async function HomePage({ searchParams }) {
                     </div>
                   ) : null}
 
-                  {builderSection === "triggers" ? (
-                    <div className="builderSection stackCompact">
-                      <div className="historyCard">
-                        <strong>Triggers</strong>
-                        <p className="sectionCopy">Create actions that react to connectivity, schedules, or variable changes.</p>
-                      </div>
-                      <div className="builderGrid">
-                        <article className="builderCard">
-                          <div className="builderCardTop">
-                            <div>
-                              <p className="authKicker">Trigger</p>
-                              <strong>Offline Alert</strong>
-                            </div>
-                            <span className="chip chipOffline">Suggestion</span>
-                          </div>
-                          <p className="builderCardCopy">Notify when a device heartbeat is missing for more than one minute.</p>
-                        </article>
-                        <article className="builderCard">
-                          <div className="builderCardTop">
-                            <div>
-                              <p className="authKicker">Trigger</p>
-                              <strong>Night Schedule</strong>
-                            </div>
-                            <span className="chip">Suggestion</span>
-                          </div>
-                          <p className="builderCardCopy">Switch the LED off automatically outside active hours.</p>
-                        </article>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {builderSection === "templates" ? (
-                    <div className="builderSection stackCompact">
-                      <div className="historyCard">
-                        <strong>Templates</strong>
-                        <p className="sectionCopy">Reusable setups for common Arduino devices, dashboards, and automation flows.</p>
-                      </div>
-                      <div className="builderGrid">
-                        <article className="builderCard">
-                          <div className="builderCardTop">
-                            <div>
-                              <p className="authKicker">Template</p>
-                              <strong>UNO R4 WiFi LED</strong>
-                            </div>
-                            <span className="chip chipOnline">Ready</span>
-                          </div>
-                          <p className="builderCardCopy">One thing, one device, one LED widget, and a retained MQTT command topic.</p>
-                        </article>
-                        <article className="builderCard">
-                          <div className="builderCardTop">
-                            <div>
-                              <p className="authKicker">Template</p>
-                              <strong>Greenhouse Starter</strong>
-                            </div>
-                            <span className="chip">Draft</span>
-                          </div>
-                          <p className="builderCardCopy">Add sensors, dashboards, and trigger suggestions for a greenhouse deployment.</p>
-                        </article>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {builderSection === "devices" || builderSection === "things" || builderSection === "dashboards" || builderSection === "triggers" || builderSection === "templates" ? null : null}
+                  {builderSection === "devices" || builderSection === "things" || builderSection === "dashboards" ? null : null}
                 </div>
               </div>
             </>
